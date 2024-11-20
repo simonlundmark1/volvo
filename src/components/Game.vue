@@ -26,7 +26,7 @@ export default defineComponent({
     }
     let velocity = 0
     let angularVelocity = 0 // New variable for angular velocity
-    const rotationAcceleration = 0.001 // Acceleration per frame
+    const rotationAcceleration = 0.0009 // Acceleration per frame
     const rotationDamping = 0.95 // Damping factor
     const rotationSpeed = 0.02 // Keep this variable if it is used for other purposes
     let modelLoaded = false
@@ -286,29 +286,29 @@ export default defineComponent({
 
         // Handle acceleration
         if (keys.ArrowUp) {
-          velocity += 0.004
+          velocity += 0.002
         }
         if (keys.ArrowDown) {
-          velocity -= 0.002
+          velocity -= 0.0009
         }
 
         // Apply friction
-        velocity *= 0.99
+        velocity *= 0.995
 
-        const velocityThreshold = 0.001
+        const velocityThreshold = 0.0005
         if (Math.abs(velocity) < velocityThreshold) {
           velocity = 0
         }
 
-        velocity = THREE.MathUtils.clamp(velocity, -1, 1)
+        velocity = THREE.MathUtils.clamp(velocity, -10, 10)
 
         car.translateZ(velocity)
 
         const minSteerSpeed = 0.00001
-        const maxSteerFactor = 1
+        const maxSteerFactor = 0.9
         let steerFactor = 0
         if (Math.abs(velocity) > minSteerSpeed) {
-          steerFactor = Math.min(Math.abs(velocity) / 0.2, maxSteerFactor)
+          steerFactor = Math.min(Math.abs(velocity) / 0.1, maxSteerFactor)
           steerFactor *= Math.sign(velocity)
         }
 
@@ -325,7 +325,7 @@ export default defineComponent({
 
         angularVelocity *= rotationDamping
 
-        const angularThreshold = 0.0001
+        const angularThreshold = 0.00001
         if (Math.abs(angularVelocity) < angularThreshold) {
           angularVelocity = 0
         }
