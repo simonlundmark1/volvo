@@ -397,19 +397,19 @@ export default defineComponent({
         }
 
         // Apply friction
-        velocity *= 0.995
+        velocity *= 0.997
 
         const velocityThreshold = 0.0005
         if (Math.abs(velocity) < velocityThreshold) {
           velocity = 0
         }
 
-        velocity = THREE.MathUtils.clamp(velocity, -10, 10)
+        velocity = THREE.MathUtils.clamp(velocity, -20, 20)
 
         car.translateZ(velocity)
 
         const minSteerSpeed = 0.00001
-        const maxSteerFactor = 0.9
+        const maxSteerFactor = 1
         let steerFactor = 0
         if (Math.abs(velocity) > minSteerSpeed) {
           steerFactor = Math.min(Math.abs(velocity) / 0.1, maxSteerFactor)
@@ -434,7 +434,7 @@ export default defineComponent({
           angularVelocity = 0
         }
 
-        angularVelocity = THREE.MathUtils.clamp(angularVelocity, -0.05, 0.05)
+        angularVelocity = THREE.MathUtils.clamp(angularVelocity, -0.03, 0.03)
 
         if (steerFactor !== 0) {
           car.rotation.y += angularVelocity
@@ -459,7 +459,7 @@ export default defineComponent({
         // Increase FOV based on velocity
         const minFOV = 50
         const maxFOV = 90
-        const newFOV = THREE.MathUtils.lerp(maxFOV, minFOV, Math.abs(velocity) / 10) // Adjust divisor to control FOV change speed
+        const newFOV = THREE.MathUtils.lerp(maxFOV, minFOV, Math.abs(velocity) / 20) // Adjust divisor to control FOV change speed
         camera.fov = newFOV
         camera.updateProjectionMatrix() // Make sure to update the projection matrix after changing the FOV
 
