@@ -1,26 +1,31 @@
 <template>
-  <img alt="Vue logo" src="./assets/logo.png">
-  <HelloWorld msg="Welcome to Your Vue.js App"/>
+  <div id="app">
+    <Game />
+  </div>
 </template>
 
-<script>
-import HelloWorld from './components/HelloWorld.vue'
+<script lang="ts">
+import { defineComponent } from 'vue'
+import Game from './components/Game.vue'
 
-export default {
+export default defineComponent({
   name: 'App',
   components: {
-    HelloWorld
-  }
-}
+    Game,
+  },
+})
 </script>
 
 <style>
 #app {
-  font-family: Avenir, Helvetica, Arial, sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  text-align: center;
-  color: #2c3e50;
-  margin-top: 60px;
+  margin: 0; /* Reset margin */
+  padding: 0; /* Reset padding */
+  width: 100vw; /* Use the full width of the viewport */
+  height: 100vh; /* Use the full height of the viewport */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background-color: #000; /* Background color */
+  overflow: hidden; /* Prevents overflow from the game canvas */
 }
 </style>
