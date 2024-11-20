@@ -28,7 +28,6 @@ export default defineComponent({
     let angularVelocity = 0 // New variable for angular velocity
     const rotationAcceleration = 0.0009 // Acceleration per frame
     const rotationDamping = 0.95 // Damping factor
-    const rotationSpeed = 0.02 // Keep this variable if it is used for other purposes
     let modelLoaded = false
 
     const RENDERER_WIDTH = 640
@@ -53,6 +52,7 @@ export default defineComponent({
         ),
       )
       camera.position.set(0, 5, 10) // Set initial position of the camera
+      camera.rotation.x = -Math.PI / 6 // Tilt the camera upward slightly
 
       // Initialize Renderer
       renderer = markRaw(
@@ -64,11 +64,8 @@ export default defineComponent({
         }),
       )
       renderer.setSize(RENDERER_WIDTH, RENDERER_HEIGHT)
-      renderer.domElement.classList.add('pixelated')
-      renderer.domElement.style.imageRendering = 'pixelated'
       renderer.shadowMap.enabled = true
       renderer.shadowMap.type = THREE.PCFSoftShadowMap
-      renderer.setPixelRatio(window.devicePixelRatio)
 
       // Append Renderer to the DOM
       if (gameContainer.value) {
@@ -141,16 +138,16 @@ export default defineComponent({
       // Load Road Texture
       const roadTexture = textureLoader.load(
         '/assets/textures/road.jpg',
-        (texture: THREE.Texture) => {
+        (texture) => {
           texture.wrapS = THREE.RepeatWrapping
           texture.wrapT = THREE.RepeatWrapping
-          texture.repeat.set(1, 40)
+          texture.repeat.set(1, 40) // Adjust for vertical road repetition
           texture.encoding = THREE.sRGBEncoding
           texture.minFilter = THREE.LinearFilter
           texture.magFilter = THREE.LinearFilter
           texture.generateMipmaps = true
         },
-        (xhr: ProgressEvent<EventTarget>) => {
+        (xhr) => {
           if (xhr.lengthComputable) {
             const percentComplete = (xhr.loaded / xhr.total) * 100
             console.log(`Road texture ${percentComplete.toFixed(2)}% loaded`)
@@ -159,14 +156,122 @@ export default defineComponent({
         (error) => handleLoadingError(error, 'road texture'),
       )
 
-      // Create Road Mesh
-      const roadGeometry = new THREE.PlaneGeometry(10, 400)
+      // Define road and grid properties
+      const roadWidth = 15 // Width of the road
+      const roadHeight = 0.02 // Height of the road
+      const blockSize = 60 // Size of the "block" area between roads (larger blocks)
+      const rows = 10 // Number of rows of roads
+      const columns = 10 // Number of columns of roads
+      const blockSpacing = blockSize + roadWidth // Distance between road centers
+
+      // Create the material for the roads with the road texture
       const roadMaterial = new THREE.MeshStandardMaterial({ map: roadTexture })
-      const road = new THREE.Mesh(roadGeometry, roadMaterial)
-      road.rotation.x = -Math.PI / 2
-      road.position.set(0, 0.01, 0)
-      road.receiveShadow = true
-      scene.add(road)
+
+      // Create horizontal roads (X-axis roads)
+      for (let row = 0; row <= rows; row++) {
+        const roadGeometry = new THREE.BoxGeometry(columns * blockSpacing, roadHeight, roadWidth)
+        const roadMesh = new THREE.Mesh(roadGeometry, roadMaterial)
+        roadMesh.receiveShadow = true
+
+        // Position each horizontal road
+        roadMesh.position.set(
+          (columns * blockSpacing) / 2 - blockSpacing / 2, // Center the road horizontally
+          roadHeight / 2, // Slightly elevate the road
+          row * blockSpacing - blockSpacing / 2, // Position along Z-axis
+        )
+
+        // Add the horizontal road to the scene
+        scene.add(roadMesh)
+      }
+
+      // Create vertical roads (Z-axis roads)
+      for (let col = 0; col <= columns; col++) {
+        const roadGeometry = new THREE.BoxGeometry(roadWidth, roadHeight, rows * blockSpacing)
+        const roadMesh = new THREE.Mesh(roadGeometry, roadMaterial)
+        roadMesh.receiveShadow = true
+
+        // Position each vertical road
+        roadMesh.position.set(
+          col * blockSpacing - blockSpacing / 2, // Position along X-axis
+          roadHeight / 2, // Slightly elevate the road
+          (rows * blockSpacing) / 2 - blockSpacing / 2, // Center the road vertically
+        )
+
+        // Add the vertical road to the scene
+        scene.add(roadMesh)
+      }
+
+      // Optional: Add ground for blocks (optional green areas)
+      const groundGeometry = new THREE.PlaneGeometry(columns * blockSpacing, rows * blockSpacing)
+      const groundMaterial = new THREE.MeshStandardMaterial({ color: 0x228b22 }) // Green for grass
+      const ground3 = new THREE.Mesh(groundGeometry, groundMaterial)
+      ground3.rotation.x = -Math.PI / 2 // Rotate to be horizontal
+      ground3.receiveShadow = true
+
+      // Add the ground beneath the roads
+      scene.add(ground)
+
+      // Add a console message for debugging
+      console.log('Road grid with textured roads and spaced blocks created.')
+
+      // Load House Texture
+      const houseTexture = textureLoader.load(
+        '/assets/textures/house.jpg', // Path to your house texture
+        (texture) => {
+          texture.wrapS = THREE.RepeatWrapping
+          texture.wrapT = THREE.RepeatWrapping
+          texture.repeat.set(1, 1) // Adjust repeat for tiling effect
+          texture.encoding = THREE.sRGBEncoding
+        },
+        (xhr) => {
+          if (xhr.lengthComputable) {
+            const percentComplete = (xhr.loaded / xhr.total) * 100
+            console.log(`House texture ${percentComplete.toFixed(2)}% loaded`)
+          }
+        },
+        (error) => handleLoadingError(error, 'house texture'),
+      )
+
+      // Add Houses to the Blocks
+      for (let row = 0; row < rows; row++) {
+        for (let col = 0; col < columns; col++) {
+          // Center position of each block
+          const blockCenterX = col * blockSpacing
+          const blockCenterZ = row * blockSpacing
+
+          // Randomly decide the number of houses in this block
+          const houseCount = Math.floor(Math.random() * 5) + 1
+
+          for (let i = 0; i < houseCount; i++) {
+            // Randomize position within the block
+            const offsetX = (Math.random() - 0.5) * (blockSize - roadWidth)
+            const offsetZ = (Math.random() - 0.5) * (blockSize - roadWidth)
+
+            const houseX = blockCenterX + offsetX
+            const houseZ = blockCenterZ + offsetZ
+
+            // Create a simple box for the house
+            const houseGeometry = new THREE.BoxGeometry(
+              Math.random() * 10 + 5, // Width
+              Math.random() * 20 + 10, // Height
+              Math.random() * 10 + 5, // Depth
+            )
+
+            // Create the material with the house texture
+            const houseMaterial = new THREE.MeshStandardMaterial({ map: houseTexture })
+
+            const houseMesh = new THREE.Mesh(houseGeometry, houseMaterial)
+            houseMesh.castShadow = true
+            houseMesh.receiveShadow = true
+
+            // Position the house
+            houseMesh.position.set(houseX, houseGeometry.parameters.height / 2, houseZ)
+
+            // Add the house to the scene
+            scene.add(houseMesh)
+          }
+        }
+      }
 
       // Load OBJ Model as Car and Roof
       const objLoader = new OBJLoader()
@@ -345,8 +450,9 @@ export default defineComponent({
 
         // Smoothly interpolate the camera position and rotation
         camera.position.lerp(cameraOffset, 0.05) // Adjust the factor to control the smoothing
-        camera.rotation.x = THREE.MathUtils.lerp(camera.rotation.x, Math.PI / 4, 0.05) // Adjust this to control vertical smoothing
-        camera.lookAt(car.position)
+        camera.rotation.x = THREE.MathUtils.lerp(camera.rotation.x, Math.PI / 12, 0.5) // Adjust this to control vertical smoothing
+
+        camera.lookAt(new THREE.Vector3(0, 2, 0).add(car.position))
 
         // Move the camera up as speed increases
         camera.position.y += velocity * 0.1 // Adjust this factor to control the upward movement
@@ -462,10 +568,5 @@ canvas {
   margin: auto;
   width: 640px;
   height: 480px;
-  image-rendering: pixelated;
-}
-
-.pixelated {
-  image-rendering: pixelated;
 }
 </style>
