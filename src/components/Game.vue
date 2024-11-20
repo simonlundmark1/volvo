@@ -277,7 +277,6 @@ export default defineComponent({
 
       animate()
     }
-
     const animate = () => {
       requestAnimationFrame(animate)
 
@@ -286,7 +285,7 @@ export default defineComponent({
 
         // Handle acceleration
         if (keys.ArrowUp) {
-          velocity += 0.002
+          velocity += 0.0015
         }
         if (keys.ArrowDown) {
           velocity -= 0.0009
@@ -348,6 +347,20 @@ export default defineComponent({
         camera.position.lerp(cameraOffset, 0.05) // Adjust the factor to control the smoothing
         camera.rotation.x = THREE.MathUtils.lerp(camera.rotation.x, Math.PI / 4, 0.05) // Adjust this to control vertical smoothing
         camera.lookAt(car.position)
+
+        // Move the camera up as speed increases
+        camera.position.y += velocity * 0.1 // Adjust this factor to control the upward movement
+        // Increase FOV based on velocity
+        const minFOV = 50
+        const maxFOV = 90
+        const newFOV = THREE.MathUtils.lerp(maxFOV, minFOV, Math.abs(velocity) / 10) // Adjust divisor to control FOV change speed
+        camera.fov = newFOV
+        camera.updateProjectionMatrix() // Make sure to update the projection matrix after changing the FOV
+
+        // Move camera closer to the car based on velocity
+        const cameraDistanceFactor = 1 - Math.min(Math.abs(velocity) / 2, 2) // Increase the reduction factor for closer distance
+        relativeCameraOffset.x *= cameraDistanceFactor
+        relativeCameraOffset.z *= cameraDistanceFactor
       }
 
       // Render the Scene
