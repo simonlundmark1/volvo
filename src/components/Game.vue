@@ -1,5 +1,8 @@
 <template>
   <div class="game-container" ref="gameContainer"></div>
+  <div class="speedometer-container">
+    <canvas ref="speedometerCanvas"></canvas>
+  </div>
 </template>
 
 <script lang="ts">
@@ -12,6 +15,8 @@ export default defineComponent({
   name: 'GameComponent',
   setup() {
     const gameContainer = ref<HTMLElement | null>(null)
+    const speedometerCanvas = ref<HTMLCanvasElement | null>(null)
+    let speedometerContext: CanvasRenderingContext2D | null = null
     let scene: THREE.Scene
     let camera: THREE.PerspectiveCamera
     let renderer: THREE.WebGLRenderer
@@ -290,7 +295,7 @@ export default defineComponent({
             // Add the house to the scene
             scene.add(houseMesh)
 
-            // **Add Pine Tree Near the House**
+            // Add Pine Tree Near the House
             const treeClone = pineTree.clone()
 
             // Slight randomization in tree position and scale
@@ -327,8 +332,7 @@ export default defineComponent({
             scene.add(treeClone)
           }
 
-          // **Add Additional Trees in the Block**
-          // To add more trees independently of houses
+          // Add Additional Trees in the Block
           const additionalTreesCount = 3 // Number of additional trees per block
           for (let t = 0; t < additionalTreesCount; t++) {
             const treeClone = pineTree.clone()
@@ -366,15 +370,14 @@ export default defineComponent({
           car.scale.set(0.01, 0.01, 0.01)
           car.position.y = -1.65
 
-          // **Rotate the Car Model to Face Positive Z-axis**
-          // This ensures that translating along Z moves the car forward
-          car.rotation.y += Math.PI // Rotate 180 degrees around Y-axis
+          // Rotate the Car Model to Face Positive Z-axis
+          car.rotation.y += Math.PI
 
           // Load the texture for the car and roof
           const textureLoader = new TextureLoader()
 
           textureLoader.load(
-            '/assets/models/Volvo_Diffusenew.png', // Path to your texture
+            '/assets/models/Volvo_Diffusenew.png',
             (texture: THREE.Texture) => {
               texture.wrapS = THREE.RepeatWrapping
               texture.wrapT = THREE.RepeatWrapping
@@ -392,7 +395,6 @@ export default defineComponent({
                   mesh.castShadow = true
                   mesh.receiveShadow = true
                   mesh.material.side = THREE.DoubleSide
-                  // Increase brightness of the car material
                   mesh.material.emissive = new THREE.Color(0x333333)
                   mesh.material.emissiveIntensity = 0.3
                 }
@@ -411,7 +413,7 @@ export default defineComponent({
 
           // Load the roof model (model_3.obj)
           objLoader.load(
-            '/assets/models/model_3.obj', // Path to the roof model
+            '/assets/models/model_3.obj',
             (roofObject) => {
               // Scale the roof model to match the car
               roofObject.scale.set(0.01, 0.01, 0.01)
@@ -530,7 +532,13 @@ export default defineComponent({
           car.translateX(sidewaysMotion)
         }
 
-        // **Camera Follow Logic**
+        // Calculate speed in km/h
+        const speedInKmH = Math.abs(velocity) * 350
+
+        // Draw the speedometer
+        drawSpeedometer(speedInKmH)
+
+        // Camera Follow Logic
         const desiredCameraOffset = new THREE.Vector3(1, 5, -5)
         const relativeCameraOffset = desiredCameraOffset.clone()
 
@@ -543,7 +551,7 @@ export default defineComponent({
         camera.position.lerp(desiredCameraPosition, 0.05)
 
         // Create a look-at point in front of and above the car
-        const lookAtOffset = new THREE.Vector3(0, 2, 10) // Point 10 units ahead and 2 units up
+        const lookAtOffset = new THREE.Vector3(0, 2, 10)
         lookAtOffset.applyAxisAngle(new THREE.Vector3(0, 1, 0), car.rotation.y)
         const lookAtPoint = car.position.clone().add(lookAtOffset)
 
@@ -567,6 +575,85 @@ export default defineComponent({
 
       // Render the Scene
       renderer.render(scene, camera)
+    }
+
+    // Function to draw the speedometer
+    const drawSpeedometer = (speed: number) => {
+      if (!speedometerContext || !speedometerCanvas.value) return
+
+      const ctx = speedometerContext
+      const canvas = speedometerCanvas.value
+      const width = (canvas.width = canvas.clientWidth)
+      const height = (canvas.height = canvas.clientHeight)
+
+      ctx.clearRect(0, 0, width, height)
+
+      // Draw the speedometer background
+      ctx.beginPath()
+      ctx.arc(width / 2, height / 2, width / 2 - 5, 0, 2 * Math.PI)
+      ctx.fillStyle = '#222' // Dark background for retro look
+      ctx.fill()
+
+      // Draw the outer rim
+      ctx.beginPath()
+      ctx.arc(width / 2, height / 2, width / 2 - 5, 0, 2 * Math.PI)
+      ctx.strokeStyle = '#555'
+      ctx.lineWidth = 5
+      ctx.stroke()
+
+      // Draw the speedometer ticks
+      ctx.strokeStyle = '#ccc'
+      ctx.lineWidth = 2
+      const maxSpeed = 200
+      const numTicks = 10
+      const startAngle = (0.8 * Math.PI) / 1 // 225 degrees (bottom left)
+      const endAngle = (2.2 * Math.PI) / 1 // 315 degrees (bottom right)
+
+      for (let i = 0; i <= numTicks; i++) {
+        const angle = startAngle + (i / numTicks) * (endAngle - startAngle)
+        const x1 = width / 2 + (width / 2 - 20) * Math.cos(angle)
+        const y1 = height / 2 + (height / 2 - 20) * Math.sin(angle)
+        const x2 = width / 2 + (width / 2 - 30) * Math.cos(angle)
+        const y2 = height / 2 + (height / 2 - 30) * Math.sin(angle)
+        ctx.beginPath()
+        ctx.moveTo(x1, y1)
+        ctx.lineTo(x2, y2)
+        ctx.stroke()
+
+        // Draw speed labels at each tick
+        const speedLabel = (i * (maxSpeed / numTicks)).toString()
+        const labelX = width / 2 + (width / 2 - 40) * Math.cos(angle)
+        const labelY = height / 2 + (height / 2 - 40) * Math.sin(angle) + 5
+        ctx.fillStyle = '#fff'
+        ctx.font = '10px Arial'
+        ctx.textAlign = 'center'
+        ctx.fillText(speedLabel, labelX, labelY)
+      }
+
+      // Draw the needle
+      const needleAngle = startAngle + (speed / maxSpeed) * (endAngle - startAngle)
+      const needleLength = width / 2 - 40
+      const needleX = width / 2 + needleLength * Math.cos(needleAngle)
+      const needleY = height / 2 + needleLength * Math.sin(needleAngle)
+
+      ctx.strokeStyle = 'red'
+      ctx.lineWidth = 2
+      ctx.beginPath()
+      ctx.moveTo(width / 2, height / 2)
+      ctx.lineTo(needleX, needleY)
+      ctx.stroke()
+
+      // Draw the center circle
+      ctx.beginPath()
+      ctx.arc(width / 2, height / 2, 5, 0, 2 * Math.PI)
+      ctx.fillStyle = '#fff'
+      ctx.fill()
+
+      // Draw the speed text
+      ctx.fillStyle = '#fff'
+      ctx.font = '12px Arial'
+      ctx.textAlign = 'center'
+      ctx.fillText(`${Math.round(speed)} km/h`, width / 2, height / 2 + 30)
     }
 
     const onKeyDown = (event: KeyboardEvent) => {
@@ -608,7 +695,7 @@ export default defineComponent({
       camera.updateProjectionMatrix()
     }
 
-    onMounted(() => {
+    const onMountedHandler = () => {
       window.addEventListener('keydown', onKeyDown)
       window.addEventListener('keyup', onKeyUp)
 
@@ -617,7 +704,15 @@ export default defineComponent({
       }
       window.addEventListener('resize', handleResize)
       handleResize()
-    })
+
+      // Initialize speedometer context
+      const canvas = speedometerCanvas.value
+      if (canvas) {
+        speedometerContext = canvas.getContext('2d')
+      }
+    }
+
+    onMounted(onMountedHandler)
 
     onBeforeUnmount(() => {
       window.removeEventListener('keydown', onKeyDown)
@@ -648,6 +743,7 @@ export default defineComponent({
 
     return {
       gameContainer,
+      speedometerCanvas,
     }
   },
 })
@@ -655,6 +751,7 @@ export default defineComponent({
 
 <style scoped>
 .game-container {
+  position: relative;
   display: flex;
   justify-content: center;
   align-items: center;
@@ -668,5 +765,21 @@ canvas {
   margin: auto;
   width: 640px;
   height: 480px;
+}
+
+.speedometer-container {
+  position: absolute;
+  bottom: 20px;
+  right: 20px;
+  width: 150px;
+  height: 150px;
+  pointer-events: none;
+}
+
+.speedometer-container canvas {
+  width: 120%;
+  height: 120%;
+  margin-left: -6vh;
+  margin-top: -2vh;
 }
 </style>
