@@ -9,7 +9,7 @@
 import { defineComponent, markRaw, onMounted, onBeforeUnmount, ref } from 'vue'
 import * as THREE from 'three'
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader'
-import { TextureLoader } from 'three'
+import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 
 export default defineComponent({
   name: 'GameComponent',
@@ -29,54 +29,45 @@ export default defineComponent({
     }
     let velocity = 0
     let angularVelocity = 0
-    const rotationAcceleration = 0.0009
     const rotationDamping = 0.95
     let modelLoaded = false
 
-    const RENDERER_WIDTH = 640
-    const RENDERER_HEIGHT = 480
+    // Constants for acceleration and speed
+    const MAX_SPEED = 20 // Maximum speed
+    const MAX_REVERSE_SPEED = -10 // Maximum reverse speed
+    const MAX_ACCELERATION = 0.3 // Slightly higher initial acceleration
+    const MIN_ACCELERATION = 0.01 // Smaller decrease at high speeds
+    const DECELERATION = 1.5 // Adjusted deceleration rate when braking
+    const FRICTION = 0.993 // Friction coefficient
+
+    const MAX_STEERING_SENSITIVITY = 0.25 // Reduced range for steering sensitivity
+    const MIN_STEERING_SENSITIVITY = 0.1
+
+    // Added constants for tilting
+    const MAX_TILT_ANGLE = THREE.MathUtils.degToRad(-15) // Maximum tilt angle in radians
+    const TILT_LERP_FACTOR = 0.3 // Factor for smoothing tilt changes
+    const MAX_TURN_RATE = 0.02 // Maximum absolute value of angularVelocity
+
+    // Variable to track the current tilt angle of the car
+    let currentTiltAngle = 0
+
+    // Reduced renderer dimensions for improved performance
+    const RENDERER_WIDTH = 480
+    const RENDERER_HEIGHT = 360
 
     const handleLoadingError = (error: unknown, assetType: string) => {
       console.error(`Error loading ${assetType}:`, error)
     }
 
-    // Function to create a pine tree
-    const createPineTree = (): THREE.Group => {
-      const tree = new THREE.Group()
-
-      // Create the trunk
-      const trunkGeometry = new THREE.CylinderGeometry(0.2, 0.5, 2, 8)
-      const trunkMaterial = new THREE.MeshStandardMaterial({ color: 0x8b4513 })
-      const trunk = new THREE.Mesh(trunkGeometry, trunkMaterial)
-      trunk.castShadow = true
-      trunk.receiveShadow = true
-      trunk.position.y = 1 // Position trunk so that it's sitting on the ground
-      tree.add(trunk)
-
-      // Create the foliage (three cones for a fuller look)
-      const foliageMaterial = new THREE.MeshStandardMaterial({ color: 0x228b22 })
-
-      for (let i = 0; i < 3; i++) {
-        const foliageGeometry = new THREE.ConeGeometry(1.5 - i * 0.5, 3 - i, 8)
-        const foliage = new THREE.Mesh(foliageGeometry, foliageMaterial)
-        foliage.castShadow = true
-        foliage.receiveShadow = true
-        foliage.position.y = 3 + i * 1.5 // Stack the cones
-        tree.add(foliage)
-      }
-
-      return tree
-    }
-
     const initScene = () => {
       // Initialize Scene
       scene = markRaw(new THREE.Scene())
-      scene.background = new THREE.Color(0x87ceeb)
+      scene.background = new THREE.Color(0x87ceeb) // Sky blue background
 
       // Initialize Camera
       camera = markRaw(
         new THREE.PerspectiveCamera(
-          75, // Reduced FOV for better perspective
+          75, // Field of View
           RENDERER_WIDTH / RENDERER_HEIGHT,
           0.1,
           10000,
@@ -88,15 +79,15 @@ export default defineComponent({
       // Initialize Renderer
       renderer = markRaw(
         new THREE.WebGLRenderer({
-          antialias: true,
+          antialias: false, // Disable anti-aliasing for pixelated look
           powerPreference: 'high-performance',
           stencil: false,
           depth: true,
         }),
       )
+      renderer.setPixelRatio(1) // Ensure pixel ratio is 1
       renderer.setSize(RENDERER_WIDTH, RENDERER_HEIGHT)
-      renderer.shadowMap.enabled = true
-      renderer.shadowMap.type = THREE.PCFSoftShadowMap
+      renderer.shadowMap.enabled = false // Disable shadows for performance
 
       // Append Renderer to the DOM
       if (gameContainer.value) {
@@ -105,30 +96,9 @@ export default defineComponent({
         console.error('Game container is not available')
       }
 
-      // Add Lights to the Scene
+      // Add Ambient Light to the Scene
       const ambientLight = new THREE.AmbientLight(0xffffff, 1)
       scene.add(ambientLight)
-
-      const directionalLight = new THREE.DirectionalLight(0xffffff, 2)
-      directionalLight.position.set(0, 100, 0)
-      directionalLight.castShadow = true
-      scene.add(directionalLight)
-
-      // Configure directional light's shadow camera
-      directionalLight.shadow.camera.left = -500
-      directionalLight.shadow.camera.right = 500
-      directionalLight.shadow.camera.top = 500
-      directionalLight.shadow.camera.bottom = -500
-      directionalLight.shadow.camera.near = 1
-      directionalLight.shadow.camera.far = 2000
-
-      // Adjust the shadow map size for better resolution
-      directionalLight.shadow.mapSize.width = 2048 // Reduced for performance
-      directionalLight.shadow.mapSize.height = 2048
-
-      const hemisphereLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.6)
-      hemisphereLight.position.set(0, 200, 0)
-      scene.add(hemisphereLight)
 
       // Initialize Texture Loader
       const textureLoader = new THREE.TextureLoader()
@@ -141,29 +111,24 @@ export default defineComponent({
           texture.wrapT = THREE.RepeatWrapping
           texture.repeat.set(100, 100)
           texture.encoding = THREE.sRGBEncoding
-          texture.minFilter = THREE.LinearFilter
+          texture.minFilter = THREE.LinearMipMapNearestFilter
           texture.magFilter = THREE.LinearFilter
           texture.generateMipmaps = true
+          texture.anisotropy = Math.min(renderer.capabilities.getMaxAnisotropy(), 4)
         },
-        (xhr: ProgressEvent<EventTarget>) => {
-          if (xhr.lengthComputable) {
-            const percentComplete = (xhr.loaded / xhr.total) * 100
-            console.log(`Ground texture ${percentComplete.toFixed(2)}% loaded`)
-          }
-        },
+        undefined,
         (error) => handleLoadingError(error, 'ground texture'),
       )
 
       // Create Ground Mesh
       const planeGeometry = new THREE.PlaneGeometry(1000, 1000)
-      const planeMaterial = new THREE.MeshStandardMaterial({
+      const planeMaterial = new THREE.MeshBasicMaterial({
         map: groundTexture,
         side: THREE.DoubleSide,
       })
       const ground = new THREE.Mesh(planeGeometry, planeMaterial)
       ground.rotation.x = -Math.PI / 2
       ground.position.set(0, 0, 0)
-      ground.receiveShadow = true
       scene.add(ground)
 
       // Load Road Texture
@@ -174,16 +139,12 @@ export default defineComponent({
           texture.wrapT = THREE.RepeatWrapping
           texture.repeat.set(1, 40)
           texture.encoding = THREE.sRGBEncoding
-          texture.minFilter = THREE.LinearFilter
+          texture.minFilter = THREE.LinearMipMapNearestFilter
           texture.magFilter = THREE.LinearFilter
           texture.generateMipmaps = true
+          texture.anisotropy = Math.min(renderer.capabilities.getMaxAnisotropy(), 4)
         },
-        (xhr) => {
-          if (xhr.lengthComputable) {
-            const percentComplete = (xhr.loaded / xhr.total) * 100
-            console.log(`Road texture ${percentComplete.toFixed(2)}% loaded`)
-          }
-        },
+        undefined,
         (error) => handleLoadingError(error, 'road texture'),
       )
 
@@ -191,18 +152,20 @@ export default defineComponent({
       const roadWidth = 15
       const roadHeight = 0.02
       const blockSize = 60
+      // Increased rows and columns to make the game world bigger
       const rows = 10
       const columns = 10
       const blockSpacing = blockSize + roadWidth
 
       // Create the material for the roads with the road texture
-      const roadMaterial = new THREE.MeshStandardMaterial({ map: roadTexture })
+      const roadMaterial = new THREE.MeshBasicMaterial({
+        map: roadTexture,
+      })
 
       // Create horizontal roads (X-axis roads)
       for (let row = 0; row <= rows; row++) {
         const roadGeometry = new THREE.BoxGeometry(columns * blockSpacing, roadHeight, roadWidth)
         const roadMesh = new THREE.Mesh(roadGeometry, roadMaterial)
-        roadMesh.receiveShadow = true
 
         // Position each horizontal road
         roadMesh.position.set(
@@ -219,7 +182,6 @@ export default defineComponent({
       for (let col = 0; col <= columns; col++) {
         const roadGeometry = new THREE.BoxGeometry(roadWidth, roadHeight, rows * blockSpacing)
         const roadMesh = new THREE.Mesh(roadGeometry, roadMaterial)
-        roadMesh.receiveShadow = true
 
         // Position each vertical road
         roadMesh.position.set(
@@ -232,9 +194,6 @@ export default defineComponent({
         scene.add(roadMesh)
       }
 
-      // Add a console message for debugging
-      console.log('Road grid with textured roads and spaced blocks created.')
-
       // Load House Texture
       const houseTexture = textureLoader.load(
         '/assets/textures/house.jpg', // Path to your house texture
@@ -243,20 +202,50 @@ export default defineComponent({
           texture.wrapT = THREE.RepeatWrapping
           texture.repeat.set(2, 2) // Adjust repeat for tiling effect
           texture.encoding = THREE.sRGBEncoding
+          texture.minFilter = THREE.LinearMipMapNearestFilter
+          texture.magFilter = THREE.LinearFilter
+          texture.generateMipmaps = true
+          texture.anisotropy = Math.min(renderer.capabilities.getMaxAnisotropy(), 4)
         },
-        (xhr) => {
-          if (xhr.lengthComputable) {
-            const percentComplete = (xhr.loaded / xhr.total) * 100
-            console.log(`House texture ${percentComplete.toFixed(2)}% loaded`)
-          }
-        },
+        undefined,
         (error) => handleLoadingError(error, 'house texture'),
       )
 
-      // Create reusable pine tree geometry and material
-      const pineTree = createPineTree()
+      // Prepare geometries and materials for instancing
+      const pineTreeGeometry = createPineTreeGeometry()
+      const pineTreeMaterial = new THREE.MeshBasicMaterial({ color: 0x228b22 })
 
-      // Add Houses and Pine Trees to the Blocks
+      const houseGeometry = new THREE.BoxGeometry(10, 20, 10)
+      const houseMaterial = new THREE.MeshBasicMaterial({
+        map: houseTexture,
+      })
+
+      // Calculate total number of houses and trees
+      let totalHouses = 0
+      let totalTrees = 0
+
+      for (let row = 0; row < rows; row++) {
+        for (let col = 0; col < columns; col++) {
+          totalHouses += Math.floor(Math.random() * 3) + 1 // Reduced house count
+          totalTrees += 3 // Additional trees per block
+        }
+      }
+
+      // Create InstancedMeshes
+      const houseInstancedMesh = new THREE.InstancedMesh(houseGeometry, houseMaterial, totalHouses)
+      const treeInstancedMesh = new THREE.InstancedMesh(
+        pineTreeGeometry,
+        pineTreeMaterial,
+        totalTrees,
+      )
+
+      // Index counters for instances
+      let houseIndex = 0
+      let treeIndex = 0
+
+      // Add Houses and Trees using InstancedMesh
+      const dummy = new THREE.Object3D()
+
       for (let row = 0; row < rows; row++) {
         for (let col = 0; col < columns; col++) {
           // Center position of each block
@@ -264,100 +253,63 @@ export default defineComponent({
           const blockCenterZ = row * blockSpacing
 
           // Randomly decide the number of houses in this block
-          const houseCount = Math.floor(Math.random() * 5) + 1
+          const houseCount = Math.floor(Math.random() * 3) + 1
 
           for (let i = 0; i < houseCount; i++) {
-            // Randomize position within the block with a buffer to prevent overlapping with roads
-            const buffer = roadWidth / 2 + 5 // Buffer distance from roads
+            // Randomize position within the block
+            const buffer = roadWidth / 2 + 5
             const offsetX = (Math.random() - 0.5) * (blockSize - roadWidth - buffer * 2)
             const offsetZ = (Math.random() - 0.5) * (blockSize - roadWidth - buffer * 2)
 
             const houseX = blockCenterX + offsetX
             const houseZ = blockCenterZ + offsetZ
 
-            // Create a simple box for the house
-            const houseGeometry = new THREE.BoxGeometry(
-              Math.random() * 50 + 5, // Width
-              Math.random() * 20 + 10, // Height
-              Math.random() * 10 + 5, // Depth
-            )
+            // Randomize house size
+            const width = Math.random() * 20 + 5
+            const height = Math.random() * 20 + 10
+            const depth = Math.random() * 10 + 5
 
-            // Create the material with the house texture
-            const houseMaterial = new THREE.MeshStandardMaterial({ map: houseTexture })
+            // Update dummy object for transformation
+            dummy.position.set(houseX, height / 2, houseZ)
+            dummy.scale.set(width / 10, height / 20, depth / 10)
+            dummy.updateMatrix()
 
-            const houseMesh = new THREE.Mesh(houseGeometry, houseMaterial)
-            houseMesh.castShadow = true
-            houseMesh.receiveShadow = true
-
-            // Position the house
-            houseMesh.position.set(houseX, houseGeometry.parameters.height / 2, houseZ)
-
-            // Add the house to the scene
-            scene.add(houseMesh)
-
-            // Add Pine Tree Near the House
-            const treeClone = pineTree.clone()
-
-            // Slight randomization in tree position and scale
-            const treeOffsetX = (Math.random() - 0.5) * 5 // Adjust as needed
-            const treeOffsetZ = (Math.random() - 0.5) * 5 // Adjust as needed
-            const treeScale = 0.8 + Math.random() * 0.4 // Scale between 0.8 and 1.2
-
-            // Ensure trees are placed at a minimum distance from the house
-            const minDistanceFromHouse =
-              Math.max(
-                houseGeometry.parameters.width as number,
-                houseGeometry.parameters.depth as number,
-              ) /
-                2 +
-              2 // 2 units buffer
-
-            const distanceX = Math.abs(treeOffsetX)
-            const distanceZ = Math.abs(treeOffsetZ)
-            if (distanceX < minDistanceFromHouse) {
-              treeClone.position.x = houseX + Math.sign(treeOffsetX) * minDistanceFromHouse
-            } else {
-              treeClone.position.x = houseX + treeOffsetX
-            }
-
-            if (distanceZ < minDistanceFromHouse) {
-              treeClone.position.z = houseZ + Math.sign(treeOffsetZ) * minDistanceFromHouse
-            } else {
-              treeClone.position.z = houseZ + treeOffsetZ
-            }
-
-            treeClone.position.y = 0 // Ground level
-            treeClone.scale.set(treeScale, treeScale, treeScale)
-
-            scene.add(treeClone)
+            // Set the instance matrix
+            houseInstancedMesh.setMatrixAt(houseIndex, dummy.matrix)
+            houseIndex++
           }
 
           // Add Additional Trees in the Block
           const additionalTreesCount = 3 // Number of additional trees per block
           for (let t = 0; t < additionalTreesCount; t++) {
-            const treeClone = pineTree.clone()
-
-            // Random position within the block with buffer from roads and houses
-            const buffer = roadWidth / 2 + 10 // Increased buffer for additional trees
+            // Random position within the block
+            const buffer = roadWidth / 2 + 10
             const treeOffsetX = (Math.random() - 0.5) * (blockSize - roadWidth - buffer * 2)
             const treeOffsetZ = (Math.random() - 0.5) * (blockSize - roadWidth - buffer * 2)
 
             const treeX = blockCenterX + treeOffsetX
             const treeZ = blockCenterZ + treeOffsetZ
 
-            // Ensure trees are not too close to any house
-            // This can be enhanced by checking distances to all houses if tracked
-
+            // Randomize tree scale
             const treeScale = 0.8 + Math.random() * 0.4
-            treeClone.position.set(treeX, 0, treeZ)
-            treeClone.scale.set(treeScale, treeScale, treeScale)
 
-            scene.add(treeClone)
+            // Update dummy object for transformation
+            dummy.position.set(treeX, 1, treeZ) // Positioned at y=1 to sit on the ground
+            dummy.scale.set(treeScale, treeScale, treeScale)
+            dummy.updateMatrix()
+
+            // Set the instance matrix
+            treeInstancedMesh.setMatrixAt(treeIndex, dummy.matrix)
+            treeIndex++
           }
         }
       }
 
-      // Load OBJ Model as Car and Roof
+      // Add InstancedMeshes to the scene
+      scene.add(houseInstancedMesh)
+      scene.add(treeInstancedMesh)
+
+      // Load OBJ Model as Car
       const objLoader = new OBJLoader()
 
       // Load the car model
@@ -366,140 +318,146 @@ export default defineComponent({
         (object) => {
           car = object
 
-          // Set the scale of the car model
+          // Set the scale and position of the car
           car.scale.set(0.01, 0.01, 0.01)
           car.position.y = -1.65
 
           // Rotate the Car Model to Face Positive Z-axis
           car.rotation.y += Math.PI
 
-          // Load the texture for the car and roof
-          const textureLoader = new TextureLoader()
-
+          // Load the texture for the car
           textureLoader.load(
             '/assets/models/Volvo_Diffusenew.png',
             (texture: THREE.Texture) => {
               texture.wrapS = THREE.RepeatWrapping
               texture.wrapT = THREE.RepeatWrapping
               texture.encoding = THREE.sRGBEncoding
-              texture.minFilter = THREE.LinearFilter
+              texture.minFilter = THREE.LinearMipMapNearestFilter
               texture.magFilter = THREE.LinearFilter
               texture.generateMipmaps = true
+              texture.anisotropy = Math.min(renderer.capabilities.getMaxAnisotropy(), 4)
 
               // Apply the texture to all the meshes in the car object
               car.traverse((node) => {
                 if ((node as THREE.Mesh).isMesh) {
                   const mesh = node as THREE.Mesh
-                  mesh.material.map = texture
-                  mesh.material.needsUpdate = true
-                  mesh.castShadow = true
-                  mesh.receiveShadow = true
+                  mesh.material = new THREE.MeshBasicMaterial({
+                    map: texture,
+                  })
+                  mesh.castShadow = false
+                  mesh.receiveShadow = false
                   mesh.material.side = THREE.DoubleSide
-                  mesh.material.emissive = new THREE.Color(0x333333)
-                  mesh.material.emissiveIntensity = 0.3
                 }
               })
             },
-            (xhr) => {
-              if (xhr.lengthComputable) {
-                const percentComplete = (xhr.loaded / xhr.total) * 100
-                console.log(`Texture loaded: ${percentComplete.toFixed(2)}%`)
-              }
-            },
+            undefined,
             (error) => handleLoadingError(error, 'Volvo_Diffusenew.png'),
           )
 
           scene.add(car)
-
-          // Load the roof model (model_3.obj)
-          objLoader.load(
-            '/assets/models/model_3.obj',
-            (roofObject) => {
-              // Scale the roof model to match the car
-              roofObject.scale.set(0.01, 0.01, 0.01)
-
-              // Apply the same texture to the roof
-              roofObject.traverse((node) => {
-                if ((node as THREE.Mesh).isMesh) {
-                  const mesh = node as THREE.Mesh
-                  mesh.material.map = textureLoader.load('/assets/models/Volvo_Diffusenew.png')
-                  mesh.material.needsUpdate = true
-                  mesh.castShadow = true
-                  mesh.receiveShadow = true
-                  mesh.material.side = THREE.FrontSide
-                }
-              })
-
-              // Parent the roof to the car so it moves with it
-              car.add(roofObject)
-
-              // Position the roof exactly at the car's position
-              roofObject.position.set(0, 2, 0)
-
-              console.log('Roof model loaded and positioned on the car')
-            },
-            (xhr) => {
-              if (xhr.lengthComputable) {
-                const percentComplete = (xhr.loaded / xhr.total) * 100
-                console.log(`Roof model loading: ${percentComplete.toFixed(2)}%`)
-              }
-            },
-            (error) => handleLoadingError(error, 'model_3.obj'),
-          )
-
           modelLoaded = true
           console.log('Car model loaded successfully with the correct texture')
         },
-        (xhr) => {
-          if (xhr.lengthComputable) {
-            const percentComplete = (xhr.loaded / xhr.total) * 100
-            console.log(`Car model loading: ${percentComplete.toFixed(2)}%`)
-          }
-        },
+        undefined,
         (error) => handleLoadingError(error, 'model_0.obj'),
       )
 
       animate()
     }
 
-    const animate = () => {
+    // Helper function to create a more detailed pine tree geometry
+    const createPineTreeGeometry = (): THREE.BufferGeometry => {
+      const trunkGeometry = new THREE.CylinderGeometry(0.2, 0.2, 2, 8)
+      const foliageGeometries = []
+      const numLayers = 3
+      const foliageHeight = 3
+      const layerHeight = foliageHeight / numLayers
+
+      for (let i = 0; i < numLayers; i++) {
+        const radius = 1.5 - i * 0.5 // Decrease radius for each upper layer
+        const coneGeometry = new THREE.ConeGeometry(radius, layerHeight, 8)
+        coneGeometry.translate(0, 2 + i * layerHeight, 0)
+        foliageGeometries.push(coneGeometry)
+      }
+
+      // Merge all foliage layers
+      const foliageGeometry = BufferGeometryUtils.mergeGeometries(foliageGeometries, false)
+
+      // Merge trunk and foliage geometries
+      const treeGeometry = BufferGeometryUtils.mergeGeometries(
+        [trunkGeometry, foliageGeometry],
+        false,
+      )
+
+      if (!treeGeometry) {
+        console.error('Failed to merge tree geometries')
+        return new THREE.BufferGeometry()
+      }
+
+      return treeGeometry
+    }
+
+    let prevTime = performance.now()
+
+    const animate = (time: number) => {
+      const deltaTime = (time - prevTime) / 1000 // Convert to seconds
+      prevTime = time
+
       requestAnimationFrame(animate)
 
       if (modelLoaded && car) {
-        // Handle acceleration
+        // Calculate dynamic acceleration based on current speed
+        const speedFactor = Math.abs(velocity) / MAX_SPEED
+        const accelerationFactor = 1 - speedFactor
+        const currentAcceleration =
+          MIN_ACCELERATION + (MAX_ACCELERATION - MIN_ACCELERATION) * accelerationFactor
+
+        // Handle acceleration and deceleration
         if (keys.ArrowUp) {
-          velocity += 0.0015
+          velocity += currentAcceleration * deltaTime
         }
         if (keys.ArrowDown) {
-          velocity -= 0.0009
+          velocity -= DECELERATION * deltaTime
         }
 
-        // Apply friction
-        velocity *= 0.997
+        // Apply friction when no keys are pressed
+        if (!keys.ArrowUp && !keys.ArrowDown) {
+          velocity *= FRICTION
+        }
 
-        const velocityThreshold = 0.0005
+        // Clamp the velocity
+        velocity = THREE.MathUtils.clamp(velocity, MAX_REVERSE_SPEED, MAX_SPEED)
+
+        // Threshold to stop the car when speed is very low
+        const velocityThreshold = 0.001
         if (Math.abs(velocity) < velocityThreshold) {
           velocity = 0
         }
 
-        velocity = THREE.MathUtils.clamp(velocity, -20, 20)
+        // Move the car forward or backward
+        car.translateZ(velocity * deltaTime * 100) // Adjusted multiplier
 
-        car.translateZ(velocity)
-
-        const minSteerSpeed = 0.00001
-        const maxSteerFactor = 1
+        const minSteerSpeed = Math.PI / 100
         let steerFactor = 0
         if (Math.abs(velocity) > minSteerSpeed) {
-          steerFactor = Math.min(Math.abs(velocity) / 0.1, maxSteerFactor)
-          steerFactor *= Math.sign(velocity)
+          steerFactor = Math.sign(velocity)
         }
+
+        // Calculate dynamic steering sensitivity based on current speed
+        const steeringSensitivity =
+          MAX_STEERING_SENSITIVITY -
+          (MAX_STEERING_SENSITIVITY - MIN_STEERING_SENSITIVITY) * speedFactor
+
+        // Adjust rotation acceleration
+        const baseRotationAcceleration = 0.015 // Slightly reduced base rotation acceleration
+        const dynamicRotationAcceleration = baseRotationAcceleration * steeringSensitivity
 
         if (steerFactor !== 0) {
           if (keys.ArrowLeft) {
-            angularVelocity += rotationAcceleration * steerFactor
+            angularVelocity += dynamicRotationAcceleration * steerFactor
           }
           if (keys.ArrowRight) {
-            angularVelocity -= rotationAcceleration * steerFactor
+            angularVelocity -= dynamicRotationAcceleration * steerFactor
           }
         } else {
           angularVelocity = 0
@@ -507,33 +465,32 @@ export default defineComponent({
 
         angularVelocity *= rotationDamping
 
-        const angularThreshold = 0.00001
+        const angularThreshold = 0.0001
         if (Math.abs(angularVelocity) < angularThreshold) {
           angularVelocity = 0
         }
 
-        angularVelocity = THREE.MathUtils.clamp(angularVelocity, -0.03, 0.03)
+        angularVelocity = THREE.MathUtils.clamp(angularVelocity, -0.5, 0.5) // Adjusted turning
 
         if (steerFactor !== 0) {
-          car.rotation.y += angularVelocity
+          car.rotation.y += angularVelocity * deltaTime * 30 // Adjusted multiplier
         }
 
-        const maxDriftSpeed = 15
-        const driftFactor = 2
-        const lateralDriftFactor = 2
-
-        if (Math.abs(velocity) > maxDriftSpeed) {
-          velocity *= 0.99
-
-          const driftAngle = angularVelocity * driftFactor
-          car.rotation.y += driftAngle
-
-          const sidewaysMotion = lateralDriftFactor * Math.sign(velocity)
-          car.translateX(sidewaysMotion)
+        // Calculate tilt angle based on speed and angular velocity
+        let targetTiltAngle = 0
+        if (angularVelocity !== 0 && Math.abs(velocity) > minSteerSpeed) {
+          const tiltSpeedFactor = Math.abs(velocity) / MAX_SPEED
+          targetTiltAngle = -MAX_TILT_ANGLE * (angularVelocity / MAX_TURN_RATE) * tiltSpeedFactor
         }
+
+        // Smoothly interpolate current tilt angle towards target tilt angle
+        currentTiltAngle = THREE.MathUtils.lerp(currentTiltAngle, targetTiltAngle, TILT_LERP_FACTOR)
+
+        // Apply tilt to the car model
+        car.rotation.z = currentTiltAngle
 
         // Calculate speed in km/h
-        const speedInKmH = Math.abs(velocity) * 350
+        const speedInKmH = Math.abs(velocity) * 100
 
         // Draw the speedometer
         drawSpeedometer(speedInKmH)
@@ -548,7 +505,7 @@ export default defineComponent({
         const desiredCameraPosition = car.position.clone().add(relativeCameraOffset)
 
         // Smoothly interpolate the camera position
-        camera.position.lerp(desiredCameraPosition, 0.05)
+        camera.position.lerp(desiredCameraPosition, 0.05) // Adjusted lerp factor
 
         // Create a look-at point in front of and above the car
         const lookAtOffset = new THREE.Vector3(0, 2, 10)
@@ -557,20 +514,7 @@ export default defineComponent({
 
         // Make the camera look at this point
         camera.lookAt(lookAtPoint)
-
-        // Move the camera up as speed increases
-        camera.position.y += velocity * 0.1
-
-        // Clamp camera Y position
         camera.position.y = THREE.MathUtils.clamp(camera.position.y, 1, 20)
-
-        // Increase FOV based on velocity
-        const minFOV = 50
-        const maxFOV = 75
-        const velocityFactor = THREE.MathUtils.clamp(Math.abs(velocity) / 20, 0, 1)
-        const newFOV = THREE.MathUtils.lerp(maxFOV, minFOV, velocityFactor)
-        camera.fov = newFOV
-        camera.updateProjectionMatrix()
       }
 
       // Render the Scene
@@ -686,7 +630,7 @@ export default defineComponent({
         width = containerHeight * aspectRatio
       }
 
-      renderer.setSize(width, height)
+      // Keep the renderer size fixed to maintain pixelation
       renderer.domElement.style.width = `${width}px`
       renderer.domElement.style.height = `${height}px`
 
@@ -761,25 +705,23 @@ export default defineComponent({
   overflow: hidden;
 }
 
-canvas {
-  margin: auto;
-  width: 640px;
-  height: 480px;
+.game-container canvas {
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated; /* Ensures the upscaled image remains pixelated */
 }
 
 .speedometer-container {
   position: absolute;
-  bottom: 20px;
-  right: 20px;
-  width: 150px;
-  height: 150px;
+  bottom: 5%;
+  right: 5%;
+  width: 12vw;
+  height: 25vh;
   pointer-events: none;
 }
 
 .speedometer-container canvas {
-  width: 120%;
-  height: 120%;
-  margin-left: -6vh;
-  margin-top: -2vh;
+  width: 100%;
+  height: 100%;
 }
 </style>

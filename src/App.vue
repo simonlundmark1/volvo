@@ -1,3 +1,4 @@
+<!-- App.vue -->
 <template>
   <div id="app">
     <Game />
@@ -17,15 +18,20 @@ export default defineComponent({
 </script>
 
 <style>
+/* Reset default margins and paddings */
+html,
+body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+}
+
 #app {
-  margin: 0; /* Reset margin */
-  padding: 0; /* Reset padding */
-  width: 100vw; /* Use the full width of the viewport */
-  height: 100vh; /* Use the full height of the viewport */
-  display: flex;
-  justify-content: center;
-  align-items: center;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
   background-color: #000; /* Background color */
-  overflow: hidden; /* Prevents overflow from the game canvas */
 }
 </style>
