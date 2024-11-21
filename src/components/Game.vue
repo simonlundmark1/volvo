@@ -1,5 +1,7 @@
 <template>
-  <div class="game-container" ref="gameContainer"></div>
+  <div class="game-container" ref="gameContainer">
+    <!-- Removed Reset button -->
+  </div>
   <div class="speedometer-container">
     <canvas ref="speedometerCanvas"></canvas>
   </div>
@@ -31,6 +33,9 @@ export default defineComponent({
     let angularVelocity = 0
     const rotationDamping = 0.95
     let modelLoaded = false
+    const isGameOver = ref(false) // Reactive variable to track game over state
+    let explosionSprite: THREE.Sprite | null = null // Reference to the explosion sprite
+    let explosionStartTime: number | null = null // Time when the explosion started
 
     // Constants for acceleration and speed
     const MAX_SPEED = 20 // Maximum speed
@@ -54,6 +59,13 @@ export default defineComponent({
     // Reduced renderer dimensions for improved performance
     const RENDERER_WIDTH = 480
     const RENDERER_HEIGHT = 360
+
+    // Arrays to store positions and sizes of houses and trees
+    const houseData: Array<{
+      position: THREE.Vector3
+      size: { width: number; height: number; depth: number }
+    }> = []
+    const treeData: Array<{ position: THREE.Vector3; scale: number }> = []
 
     const handleLoadingError = (error: unknown, assetType: string) => {
       console.error(`Error loading ${assetType}:`, error)
@@ -276,6 +288,12 @@ export default defineComponent({
             // Set the instance matrix
             houseInstancedMesh.setMatrixAt(houseIndex, dummy.matrix)
             houseIndex++
+
+            // Store house data for collision detection
+            houseData.push({
+              position: new THREE.Vector3(houseX, height / 2, houseZ),
+              size: { width: width / 10, height: height / 20, depth: depth / 10 },
+            })
           }
 
           // Add Additional Trees in the Block
@@ -300,6 +318,12 @@ export default defineComponent({
             // Set the instance matrix
             treeInstancedMesh.setMatrixAt(treeIndex, dummy.matrix)
             treeIndex++
+
+            // Store tree data for collision detection
+            treeData.push({
+              position: new THREE.Vector3(treeX, 1, treeZ),
+              scale: treeScale,
+            })
           }
         }
       }
@@ -360,22 +384,42 @@ export default defineComponent({
         undefined,
         (error) => handleLoadingError(error, 'model_0.obj'),
       )
-// In your initScene function, after loading the car // In your initScene function, after loading the car model
-// Load the equirectangular texture
-const textureLoader2 = new THREE.TextureLoader();
-textureLoader2.load(
-  '/assets/images/5.png',
-  (texture) => {
-    texture.mapping = THREE.EquirectangularReflectionMapping;
-    scene.background = texture;
-  },
-  undefined,
-  (error) => handleLoadingError(error, 'cubemap.png'),
-);
 
+      // Load the equirectangular texture for background
+      const textureLoader2 = new THREE.TextureLoader()
+      textureLoader2.load(
+        '/assets/images/5.png',
+        (texture) => {
+          texture.mapping = THREE.EquirectangularReflectionMapping
+          scene.background = texture
+        },
+        undefined,
+        (error) => handleLoadingError(error, '5.png'),
+      )
+
+      // Load explosion sprite sheet texture
+      explosionTexture = textureLoader.load(
+        '/assets/images/exp2.png',
+        (texture: THREE.Texture) => {
+          texture.wrapS = THREE.ClampToEdgeWrapping
+          texture.wrapT = THREE.ClampToEdgeWrapping
+          texture.minFilter = THREE.NearestFilter
+          texture.magFilter = THREE.NearestFilter
+          texture.repeat.set(1 / explosionCols, 1 / explosionRows)
+        },
+        undefined,
+        (error) => handleLoadingError(error, 'exp2.png'),
+      )
 
       animate()
     }
+
+    // Explosion texture and animation parameters
+    let explosionTexture: THREE.Texture
+    const explosionRows = 4 // Number of rows in the sprite sheet
+    const explosionCols = 4 // Number of columns in the sprite sheet
+    const totalExplosionFrames = explosionRows * explosionCols
+    const explosionDuration = 1000 // Duration of the explosion animation in milliseconds
 
     // Helper function to create a more detailed pine tree geometry
     const createPineTreeGeometry = (): THREE.BufferGeometry => {
@@ -412,12 +456,12 @@ textureLoader2.load(
     let prevTime = performance.now()
 
     const animate = (time: number) => {
-      const deltaTime = (time - prevTime) / 1000 // Convert to seconds
+      const deltaTime = (time - prevTime) // Time in milliseconds
       prevTime = time
 
       requestAnimationFrame(animate)
 
-      if (modelLoaded && car) {
+      if (modelLoaded && car && !isGameOver.value) {
         // Calculate dynamic acceleration based on current speed
         const speedFactor = Math.abs(velocity) / MAX_SPEED
         const accelerationFactor = 1 - speedFactor
@@ -426,10 +470,10 @@ textureLoader2.load(
 
         // Handle acceleration and deceleration
         if (keys.ArrowUp) {
-          velocity += currentAcceleration * deltaTime
+          velocity += currentAcceleration * (deltaTime / 1000)
         }
         if (keys.ArrowDown) {
-          velocity -= DECELERATION * deltaTime
+          velocity -= DECELERATION * (deltaTime / 1000)
         }
 
         // Apply friction when no keys are pressed
@@ -447,7 +491,7 @@ textureLoader2.load(
         }
 
         // Move the car forward or backward
-        car.translateZ(velocity * deltaTime * 100) // Adjusted multiplier
+        car.translateZ(velocity * (deltaTime / 1000) * 100) // Adjusted multiplier
 
         const minSteerSpeed = Math.PI / 100
         let steerFactor = 0
@@ -485,7 +529,7 @@ textureLoader2.load(
         angularVelocity = THREE.MathUtils.clamp(angularVelocity, -0.5, 0.5) // Adjusted turning
 
         if (steerFactor !== 0) {
-          car.rotation.y += angularVelocity * deltaTime * 30 // Adjusted multiplier
+          car.rotation.y += angularVelocity * (deltaTime / 1000) * 30 // Adjusted multiplier
         }
 
         // Calculate tilt angle based on speed and angular velocity
@@ -527,10 +571,95 @@ textureLoader2.load(
         // Make the camera look at this point
         camera.lookAt(lookAtPoint)
         camera.position.y = THREE.MathUtils.clamp(camera.position.y, 1, 20)
+
+        // Collision detection
+        const carPosition = car.position.clone()
+
+        // Check collision with houses
+        for (let i = 0; i < houseData.length; i++) {
+          const house = houseData[i]
+          const dx = carPosition.x - house.position.x
+          const dz = carPosition.z - house.position.z
+          const distance = Math.sqrt(dx * dx + dz * dz)
+          const collisionDistance = 5 // Adjust as necessary
+
+          if (distance < collisionDistance) {
+            // Collision detected
+            handleCollision()
+            break
+          }
+        }
+
+        // Check collision with trees
+        for (let i = 0; i < treeData.length; i++) {
+          const tree = treeData[i]
+          const dx = carPosition.x - tree.position.x
+          const dz = carPosition.z - tree.position.z
+          const distance = Math.sqrt(dx * dx + dz * dz)
+          const collisionDistance = 3 // Adjust as necessary
+
+          if (distance < collisionDistance) {
+            handleCollision()
+            break
+          }
+        }
+      }
+
+      // Update explosion animation
+      if (isGameOver.value && explosionSprite && explosionStartTime !== null) {
+        const elapsed = time - explosionStartTime
+        const frame = Math.floor((elapsed / explosionDuration) * totalExplosionFrames)
+
+        if (frame < totalExplosionFrames) {
+          const currentColumn = frame % explosionCols
+          const currentRow = Math.floor(frame / explosionCols)
+
+          explosionTexture.offset.x = currentColumn / explosionCols
+          explosionTexture.offset.y = 1 - (currentRow + 1) / explosionRows // Flip Y axis
+        } else {
+          // Remove explosion sprite after animation is complete
+          scene.remove(explosionSprite)
+          explosionSprite = null
+        }
       }
 
       // Render the Scene
       renderer.render(scene, camera)
+    }
+
+    // Function to handle collision and explosion
+    const handleCollision = () => {
+      isGameOver.value = true
+
+      // Create the explosion sprite
+      const explosionMaterial = new THREE.SpriteMaterial({
+        map: explosionTexture,
+        transparent: true,
+        depthTest: false, // Add this to render on top
+        depthWrite: false, // Add this to prevent writing to the depth buffer
+      })
+      explosionSprite = new THREE.Sprite(explosionMaterial)
+      explosionSprite.position.copy(car.position)
+      explosionSprite.scale.set(15, 15, 2) // Adjust size as necessary
+
+      // Adjust explosion sprite position to be slightly closer to the camera
+      const explosionOffset = new THREE.Vector3(-3, 0, 5)
+      explosionSprite.position.add(explosionOffset)
+
+      scene.add(explosionSprite)
+
+      // Record the start time of the explosion
+      explosionStartTime = performance.now()
+
+      // Remove the car from the scene
+      scene.remove(car)
+
+      // Stop the car's movement
+      velocity = 0
+      angularVelocity = 0
+
+      // Automatically reset the game after 2.5 seconds
+      setTimeout(resetGame, 1000)
     }
 
     // Function to draw the speedometer
@@ -668,6 +797,33 @@ textureLoader2.load(
       }
     }
 
+    const resetGame = () => {
+      isGameOver.value = false
+
+      // Remove explosion sprite from scene
+      if (explosionSprite) {
+        scene.remove(explosionSprite)
+        explosionSprite = null
+      }
+      explosionStartTime = null
+
+      // Add the car back to the scene
+      scene.add(car)
+
+      // Reset car's position to a new random position
+      const maxPosition = 10 * (60 + 15) // rows * blockSpacing
+      const randomX = Math.random() * maxPosition
+      const randomZ = Math.random() * maxPosition
+      car.position.set(randomX, car.position.y, randomZ)
+
+      // Reset car's rotation
+      car.rotation.set(0, 0, 0)
+
+      // Reset variables
+      velocity = 0
+      angularVelocity = 0
+    }
+
     onMounted(onMountedHandler)
 
     onBeforeUnmount(() => {
@@ -700,6 +856,7 @@ textureLoader2.load(
     return {
       gameContainer,
       speedometerCanvas,
+      isGameOver,
     }
   },
 })
@@ -736,4 +893,6 @@ textureLoader2.load(
   width: 100%;
   height: 100%;
 }
+
+/* Removed reset-button styles */
 </style>
