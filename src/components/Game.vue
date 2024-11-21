@@ -7,7 +7,6 @@ import { defineComponent, markRaw, onMounted, onBeforeUnmount, ref } from 'vue'
 import * as THREE from 'three'
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader'
 import { TextureLoader } from 'three'
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls' // Import OrbitControls
 
 export default defineComponent({
   name: 'GameComponent',
@@ -16,7 +15,6 @@ export default defineComponent({
     let scene: THREE.Scene
     let camera: THREE.PerspectiveCamera
     let renderer: THREE.WebGLRenderer
-    let controls: OrbitControls // Declare the OrbitControls variable
     let car: THREE.Object3D
     const keys: Record<string, boolean> = {
       ArrowUp: false,
@@ -25,9 +23,9 @@ export default defineComponent({
       ArrowRight: false,
     }
     let velocity = 0
-    let angularVelocity = 0 // New variable for angular velocity
-    const rotationAcceleration = 0.0009 // Acceleration per frame
-    const rotationDamping = 0.95 // Damping factor
+    let angularVelocity = 0
+    const rotationAcceleration = 0.0009
+    const rotationDamping = 0.95
     let modelLoaded = false
 
     const RENDERER_WIDTH = 640
@@ -35,6 +33,34 @@ export default defineComponent({
 
     const handleLoadingError = (error: unknown, assetType: string) => {
       console.error(`Error loading ${assetType}:`, error)
+    }
+
+    // Function to create a pine tree
+    const createPineTree = (): THREE.Group => {
+      const tree = new THREE.Group()
+
+      // Create the trunk
+      const trunkGeometry = new THREE.CylinderGeometry(0.2, 0.5, 2, 8)
+      const trunkMaterial = new THREE.MeshStandardMaterial({ color: 0x8b4513 })
+      const trunk = new THREE.Mesh(trunkGeometry, trunkMaterial)
+      trunk.castShadow = true
+      trunk.receiveShadow = true
+      trunk.position.y = 1 // Position trunk so that it's sitting on the ground
+      tree.add(trunk)
+
+      // Create the foliage (three cones for a fuller look)
+      const foliageMaterial = new THREE.MeshStandardMaterial({ color: 0x228b22 })
+
+      for (let i = 0; i < 3; i++) {
+        const foliageGeometry = new THREE.ConeGeometry(1.5 - i * 0.5, 3 - i, 8)
+        const foliage = new THREE.Mesh(foliageGeometry, foliageMaterial)
+        foliage.castShadow = true
+        foliage.receiveShadow = true
+        foliage.position.y = 3 + i * 1.5 // Stack the cones
+        tree.add(foliage)
+      }
+
+      return tree
     }
 
     const initScene = () => {
@@ -45,14 +71,14 @@ export default defineComponent({
       // Initialize Camera
       camera = markRaw(
         new THREE.PerspectiveCamera(
-          90, // Field of View
-          RENDERER_WIDTH / RENDERER_HEIGHT, // Aspect Ratio
-          0.1, // Near Clipping Plane
-          10000, // Far Clipping Plane
+          75, // Reduced FOV for better perspective
+          RENDERER_WIDTH / RENDERER_HEIGHT,
+          0.1,
+          10000,
         ),
       )
-      camera.position.set(0, 5, 10) // Set initial position of the camera
-      camera.rotation.x = -Math.PI / 6 // Tilt the camera upward slightly
+      camera.position.set(0, 5, 10)
+      camera.lookAt(0, 0, 0)
 
       // Initialize Renderer
       renderer = markRaw(
@@ -83,17 +109,17 @@ export default defineComponent({
       directionalLight.castShadow = true
       scene.add(directionalLight)
 
-      // Set up the directional light's shadow camera
-      directionalLight.shadow.camera.left = -500 // Increase for larger area
-      directionalLight.shadow.camera.right = 500 // Increase for larger area
-      directionalLight.shadow.camera.top = 500 // Increase for larger area
-      directionalLight.shadow.camera.bottom = -500 // Increase for larger area
-      directionalLight.shadow.camera.near = 1 // Shadow start distance
-      directionalLight.shadow.camera.far = 2000 // Shadow end distance
+      // Configure directional light's shadow camera
+      directionalLight.shadow.camera.left = -500
+      directionalLight.shadow.camera.right = 500
+      directionalLight.shadow.camera.top = 500
+      directionalLight.shadow.camera.bottom = -500
+      directionalLight.shadow.camera.near = 1
+      directionalLight.shadow.camera.far = 2000
 
       // Adjust the shadow map size for better resolution
-      directionalLight.shadow.mapSize.width = 9048 // Higher value for better shadow quality
-      directionalLight.shadow.mapSize.height = 9048 // Higher value for better shadow quality
+      directionalLight.shadow.mapSize.width = 2048 // Reduced for performance
+      directionalLight.shadow.mapSize.height = 2048
 
       const hemisphereLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.6)
       hemisphereLight.position.set(0, 200, 0)
@@ -141,7 +167,7 @@ export default defineComponent({
         (texture) => {
           texture.wrapS = THREE.RepeatWrapping
           texture.wrapT = THREE.RepeatWrapping
-          texture.repeat.set(1, 40) // Adjust for vertical road repetition
+          texture.repeat.set(1, 40)
           texture.encoding = THREE.sRGBEncoding
           texture.minFilter = THREE.LinearFilter
           texture.magFilter = THREE.LinearFilter
@@ -157,12 +183,12 @@ export default defineComponent({
       )
 
       // Define road and grid properties
-      const roadWidth = 15 // Width of the road
-      const roadHeight = 0.02 // Height of the road
-      const blockSize = 60 // Size of the "block" area between roads (larger blocks)
-      const rows = 10 // Number of rows of roads
-      const columns = 10 // Number of columns of roads
-      const blockSpacing = blockSize + roadWidth // Distance between road centers
+      const roadWidth = 15
+      const roadHeight = 0.02
+      const blockSize = 60
+      const rows = 10
+      const columns = 10
+      const blockSpacing = blockSize + roadWidth
 
       // Create the material for the roads with the road texture
       const roadMaterial = new THREE.MeshStandardMaterial({ map: roadTexture })
@@ -175,9 +201,9 @@ export default defineComponent({
 
         // Position each horizontal road
         roadMesh.position.set(
-          (columns * blockSpacing) / 2 - blockSpacing / 2, // Center the road horizontally
-          roadHeight / 2, // Slightly elevate the road
-          row * blockSpacing - blockSpacing / 2, // Position along Z-axis
+          (columns * blockSpacing) / 2 - blockSpacing / 2,
+          roadHeight / 2,
+          row * blockSpacing - blockSpacing / 2,
         )
 
         // Add the horizontal road to the scene
@@ -192,24 +218,14 @@ export default defineComponent({
 
         // Position each vertical road
         roadMesh.position.set(
-          col * blockSpacing - blockSpacing / 2, // Position along X-axis
-          roadHeight / 2, // Slightly elevate the road
-          (rows * blockSpacing) / 2 - blockSpacing / 2, // Center the road vertically
+          col * blockSpacing - blockSpacing / 2,
+          roadHeight / 2,
+          (rows * blockSpacing) / 2 - blockSpacing / 2,
         )
 
         // Add the vertical road to the scene
         scene.add(roadMesh)
       }
-
-      // Optional: Add ground for blocks (optional green areas)
-      const groundGeometry = new THREE.PlaneGeometry(columns * blockSpacing, rows * blockSpacing)
-      const groundMaterial = new THREE.MeshStandardMaterial({ color: 0x228b22 }) // Green for grass
-      const ground3 = new THREE.Mesh(groundGeometry, groundMaterial)
-      ground3.rotation.x = -Math.PI / 2 // Rotate to be horizontal
-      ground3.receiveShadow = true
-
-      // Add the ground beneath the roads
-      scene.add(ground)
 
       // Add a console message for debugging
       console.log('Road grid with textured roads and spaced blocks created.')
@@ -220,7 +236,7 @@ export default defineComponent({
         (texture) => {
           texture.wrapS = THREE.RepeatWrapping
           texture.wrapT = THREE.RepeatWrapping
-          texture.repeat.set(1, 1) // Adjust repeat for tiling effect
+          texture.repeat.set(2, 2) // Adjust repeat for tiling effect
           texture.encoding = THREE.sRGBEncoding
         },
         (xhr) => {
@@ -232,7 +248,10 @@ export default defineComponent({
         (error) => handleLoadingError(error, 'house texture'),
       )
 
-      // Add Houses to the Blocks
+      // Create reusable pine tree geometry and material
+      const pineTree = createPineTree()
+
+      // Add Houses and Pine Trees to the Blocks
       for (let row = 0; row < rows; row++) {
         for (let col = 0; col < columns; col++) {
           // Center position of each block
@@ -243,16 +262,17 @@ export default defineComponent({
           const houseCount = Math.floor(Math.random() * 5) + 1
 
           for (let i = 0; i < houseCount; i++) {
-            // Randomize position within the block
-            const offsetX = (Math.random() - 0.5) * (blockSize - roadWidth)
-            const offsetZ = (Math.random() - 0.5) * (blockSize - roadWidth)
+            // Randomize position within the block with a buffer to prevent overlapping with roads
+            const buffer = roadWidth / 2 + 5 // Buffer distance from roads
+            const offsetX = (Math.random() - 0.5) * (blockSize - roadWidth - buffer * 2)
+            const offsetZ = (Math.random() - 0.5) * (blockSize - roadWidth - buffer * 2)
 
             const houseX = blockCenterX + offsetX
             const houseZ = blockCenterZ + offsetZ
 
             // Create a simple box for the house
             const houseGeometry = new THREE.BoxGeometry(
-              Math.random() * 10 + 5, // Width
+              Math.random() * 50 + 5, // Width
               Math.random() * 20 + 10, // Height
               Math.random() * 10 + 5, // Depth
             )
@@ -269,6 +289,66 @@ export default defineComponent({
 
             // Add the house to the scene
             scene.add(houseMesh)
+
+            // **Add Pine Tree Near the House**
+            const treeClone = pineTree.clone()
+
+            // Slight randomization in tree position and scale
+            const treeOffsetX = (Math.random() - 0.5) * 5 // Adjust as needed
+            const treeOffsetZ = (Math.random() - 0.5) * 5 // Adjust as needed
+            const treeScale = 0.8 + Math.random() * 0.4 // Scale between 0.8 and 1.2
+
+            // Ensure trees are placed at a minimum distance from the house
+            const minDistanceFromHouse =
+              Math.max(
+                houseGeometry.parameters.width as number,
+                houseGeometry.parameters.depth as number,
+              ) /
+                2 +
+              2 // 2 units buffer
+
+            const distanceX = Math.abs(treeOffsetX)
+            const distanceZ = Math.abs(treeOffsetZ)
+            if (distanceX < minDistanceFromHouse) {
+              treeClone.position.x = houseX + Math.sign(treeOffsetX) * minDistanceFromHouse
+            } else {
+              treeClone.position.x = houseX + treeOffsetX
+            }
+
+            if (distanceZ < minDistanceFromHouse) {
+              treeClone.position.z = houseZ + Math.sign(treeOffsetZ) * minDistanceFromHouse
+            } else {
+              treeClone.position.z = houseZ + treeOffsetZ
+            }
+
+            treeClone.position.y = 0 // Ground level
+            treeClone.scale.set(treeScale, treeScale, treeScale)
+
+            scene.add(treeClone)
+          }
+
+          // **Add Additional Trees in the Block**
+          // To add more trees independently of houses
+          const additionalTreesCount = 3 // Number of additional trees per block
+          for (let t = 0; t < additionalTreesCount; t++) {
+            const treeClone = pineTree.clone()
+
+            // Random position within the block with buffer from roads and houses
+            const buffer = roadWidth / 2 + 10 // Increased buffer for additional trees
+            const treeOffsetX = (Math.random() - 0.5) * (blockSize - roadWidth - buffer * 2)
+            const treeOffsetZ = (Math.random() - 0.5) * (blockSize - roadWidth - buffer * 2)
+
+            const treeX = blockCenterX + treeOffsetX
+            const treeZ = blockCenterZ + treeOffsetZ
+
+            // Ensure trees are not too close to any house
+            // This can be enhanced by checking distances to all houses if tracked
+
+            const treeScale = 0.8 + Math.random() * 0.4
+            treeClone.position.set(treeX, 0, treeZ)
+            treeClone.scale.set(treeScale, treeScale, treeScale)
+
+            scene.add(treeClone)
           }
         }
       }
@@ -283,8 +363,12 @@ export default defineComponent({
           car = object
 
           // Set the scale of the car model
-          car.scale.set(0.01, 0.01, 0.01) // Set scale to 0.01 on all axes (x, y, z)
-          car.position.y = -1.65 // Add this line to lower the car's position
+          car.scale.set(0.01, 0.01, 0.01)
+          car.position.y = -1.65
+
+          // **Rotate the Car Model to Face Positive Z-axis**
+          // This ensures that translating along Z moves the car forward
+          car.rotation.y += Math.PI // Rotate 180 degrees around Y-axis
 
           // Load the texture for the car and roof
           const textureLoader = new TextureLoader()
@@ -307,10 +391,10 @@ export default defineComponent({
                   mesh.material.needsUpdate = true
                   mesh.castShadow = true
                   mesh.receiveShadow = true
-                  mesh.material.side = THREE.DoubleSide // Only render the front faces (change to THREE.DoubleSide if you need both)
-                  // Add these lines to increase brightness of the car material
-                  mesh.material.emissive = new THREE.Color(0x333333) // Adds a subtle glow
-                  mesh.material.emissiveIntensity = 0.3 // Adjust this value between 0 and 1
+                  mesh.material.side = THREE.DoubleSide
+                  // Increase brightness of the car material
+                  mesh.material.emissive = new THREE.Color(0x333333)
+                  mesh.material.emissiveIntensity = 0.3
                 }
               })
             },
@@ -330,25 +414,25 @@ export default defineComponent({
             '/assets/models/model_3.obj', // Path to the roof model
             (roofObject) => {
               // Scale the roof model to match the car
-              roofObject.scale.set(0.01, 0.01, 0.01) // Adjust as necessary
+              roofObject.scale.set(0.01, 0.01, 0.01)
 
               // Apply the same texture to the roof
               roofObject.traverse((node) => {
                 if ((node as THREE.Mesh).isMesh) {
                   const mesh = node as THREE.Mesh
-                  mesh.material.map = texture
+                  mesh.material.map = textureLoader.load('/assets/models/Volvo_Diffusenew.png')
                   mesh.material.needsUpdate = true
                   mesh.castShadow = true
                   mesh.receiveShadow = true
-                  mesh.material.side = THREE.FrontSide // Ensure only front faces are rendered
+                  mesh.material.side = THREE.FrontSide
                 }
               })
 
               // Parent the roof to the car so it moves with it
               car.add(roofObject)
 
-              // Position the roof exactly at the car's position (this will keep it aligned)
-              roofObject.position.set(0, 2, 0) // Adjust the y position to place the roof correctly on the car
+              // Position the roof exactly at the car's position
+              roofObject.position.set(0, 2, 0)
 
               console.log('Roof model loaded and positioned on the car')
             },
@@ -373,21 +457,13 @@ export default defineComponent({
         (error) => handleLoadingError(error, 'model_0.obj'),
       )
 
-      // Initialize OrbitControls for free look
-      controls = new OrbitControls(camera, renderer.domElement)
-      controls.enableDamping = true
-      controls.dampingFactor = 0.25
-      controls.screenSpacePanning = false
-      controls.maxPolarAngle = Math.PI / 2 // Limit vertical rotation (no flipping upside down)
-
       animate()
     }
+
     const animate = () => {
       requestAnimationFrame(animate)
 
       if (modelLoaded && car) {
-        controls.update() // Update controls for smooth camera movement
-
         // Handle acceleration
         if (keys.ArrowUp) {
           velocity += 0.0015
@@ -440,33 +516,53 @@ export default defineComponent({
           car.rotation.y += angularVelocity
         }
 
-        const relativeCameraOffset = new THREE.Vector3(10, 500, 500)
-        const angle = Math.PI
-        const rotatedOffset = relativeCameraOffset
-          .clone()
-          .applyAxisAngle(new THREE.Vector3(0.06, 1.02, -0.04), angle)
+        const maxDriftSpeed = 15
+        const driftFactor = 2
+        const lateralDriftFactor = 2
 
-        const cameraOffset = rotatedOffset.applyMatrix4(car.matrixWorld)
+        if (Math.abs(velocity) > maxDriftSpeed) {
+          velocity *= 0.99
 
-        // Smoothly interpolate the camera position and rotation
-        camera.position.lerp(cameraOffset, 0.05) // Adjust the factor to control the smoothing
-        camera.rotation.x = THREE.MathUtils.lerp(camera.rotation.x, Math.PI / 12, 0.5) // Adjust this to control vertical smoothing
+          const driftAngle = angularVelocity * driftFactor
+          car.rotation.y += driftAngle
 
-        camera.lookAt(new THREE.Vector3(0, 2, 0).add(car.position))
+          const sidewaysMotion = lateralDriftFactor * Math.sign(velocity)
+          car.translateX(sidewaysMotion)
+        }
+
+        // **Camera Follow Logic**
+        const desiredCameraOffset = new THREE.Vector3(1, 5, -5)
+        const relativeCameraOffset = desiredCameraOffset.clone()
+
+        // Rotate the offset based on the car's rotation
+        relativeCameraOffset.applyAxisAngle(new THREE.Vector3(0, 1, 0), car.rotation.y)
+
+        const desiredCameraPosition = car.position.clone().add(relativeCameraOffset)
+
+        // Smoothly interpolate the camera position
+        camera.position.lerp(desiredCameraPosition, 0.05)
+
+        // Create a look-at point in front of and above the car
+        const lookAtOffset = new THREE.Vector3(0, 2, 10) // Point 10 units ahead and 2 units up
+        lookAtOffset.applyAxisAngle(new THREE.Vector3(0, 1, 0), car.rotation.y)
+        const lookAtPoint = car.position.clone().add(lookAtOffset)
+
+        // Make the camera look at this point
+        camera.lookAt(lookAtPoint)
 
         // Move the camera up as speed increases
-        camera.position.y += velocity * 0.1 // Adjust this factor to control the upward movement
+        camera.position.y += velocity * 0.1
+
+        // Clamp camera Y position
+        camera.position.y = THREE.MathUtils.clamp(camera.position.y, 1, 20)
+
         // Increase FOV based on velocity
         const minFOV = 50
-        const maxFOV = 90
-        const newFOV = THREE.MathUtils.lerp(maxFOV, minFOV, Math.abs(velocity) / 20) // Adjust divisor to control FOV change speed
+        const maxFOV = 75
+        const velocityFactor = THREE.MathUtils.clamp(Math.abs(velocity) / 20, 0, 1)
+        const newFOV = THREE.MathUtils.lerp(maxFOV, minFOV, velocityFactor)
         camera.fov = newFOV
-        camera.updateProjectionMatrix() // Make sure to update the projection matrix after changing the FOV
-
-        // Move camera closer to the car based on velocity
-        const cameraDistanceFactor = 1 - Math.min(Math.abs(velocity) / 2, 2) // Increase the reduction factor for closer distance
-        relativeCameraOffset.x *= cameraDistanceFactor
-        relativeCameraOffset.z *= cameraDistanceFactor
+        camera.updateProjectionMatrix()
       }
 
       // Render the Scene
@@ -506,6 +602,10 @@ export default defineComponent({
       renderer.setSize(width, height)
       renderer.domElement.style.width = `${width}px`
       renderer.domElement.style.height = `${height}px`
+
+      // Update camera aspect ratio
+      camera.aspect = width / height
+      camera.updateProjectionMatrix()
     }
 
     onMounted(() => {
