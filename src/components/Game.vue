@@ -62,7 +62,6 @@ export default defineComponent({
     const initScene = () => {
       // Initialize Scene
       scene = markRaw(new THREE.Scene())
-      scene.background = new THREE.Color(0x87ceeb) // Sky blue background
 
       // Initialize Camera
       camera = markRaw(
@@ -361,6 +360,19 @@ export default defineComponent({
         undefined,
         (error) => handleLoadingError(error, 'model_0.obj'),
       )
+// In your initScene function, after loading the car // In your initScene function, after loading the car model
+// Load the equirectangular texture
+const textureLoader2 = new THREE.TextureLoader();
+textureLoader2.load(
+  '/assets/images/5.png',
+  (texture) => {
+    texture.mapping = THREE.EquirectangularReflectionMapping;
+    scene.background = texture;
+  },
+  undefined,
+  (error) => handleLoadingError(error, 'cubemap.png'),
+);
+
 
       animate()
     }
