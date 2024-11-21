@@ -1,6 +1,10 @@
 <template>
   <div class="game-container" ref="gameContainer">
-    <!-- Removed Reset button -->
+    <!-- Overlay added -->
+    <div v-if="showOverlay" class="overlay">
+      <img src="/assets/images/start2.png" alt="Start Screen" class="overlay-image" />
+      <button class="play-button" @click="startGame">Play</button>
+    </div>
   </div>
   <div class="speedometer-container">
     <canvas ref="speedometerCanvas"></canvas>
@@ -33,25 +37,29 @@ export default defineComponent({
     let angularVelocity = 0
     const rotationDamping = 0.95
     let modelLoaded = false
-    const isGameOver = ref(false) // Reactive variable to track game over state
-    let explosionSprite: THREE.Sprite | null = null // Reference to the explosion sprite
-    let explosionStartTime: number | null = null // Time when the explosion started
+    const isGameOver = ref(false)
+    let explosionSprite: THREE.Sprite | null = null
+    let explosionStartTime: number | null = null
+
+    // Added for the overlay and background music
+    const showOverlay = ref(true)
+    let backgroundAudio: HTMLAudioElement | null = null
 
     // Constants for acceleration and speed
-    const MAX_SPEED = 20 // Maximum speed
-    const MAX_REVERSE_SPEED = -10 // Maximum reverse speed
-    const MAX_ACCELERATION = 0.3 // Slightly higher initial acceleration
-    const MIN_ACCELERATION = 0.01 // Smaller decrease at high speeds
-    const DECELERATION = 1.5 // Adjusted deceleration rate when braking
-    const FRICTION = 0.993 // Friction coefficient
+    const MAX_SPEED = 20
+    const MAX_REVERSE_SPEED = -10
+    const MAX_ACCELERATION = 0.3
+    const MIN_ACCELERATION = 0.01
+    const DECELERATION = 1.5
+    const FRICTION = 0.993
 
-    const MAX_STEERING_SENSITIVITY = 0.25 // Reduced range for steering sensitivity
+    const MAX_STEERING_SENSITIVITY = 0.25
     const MIN_STEERING_SENSITIVITY = 0.1
 
     // Added constants for tilting
-    const MAX_TILT_ANGLE = THREE.MathUtils.degToRad(-15) // Maximum tilt angle in radians
-    const TILT_LERP_FACTOR = 0.3 // Factor for smoothing tilt changes
-    const MAX_TURN_RATE = 0.02 // Maximum absolute value of angularVelocity
+    const MAX_TILT_ANGLE = THREE.MathUtils.degToRad(-15)
+    const TILT_LERP_FACTOR = 0.3
+    const MAX_TURN_RATE = 0.02
 
     // Variable to track the current tilt angle of the car
     let currentTiltAngle = 0
@@ -66,6 +74,9 @@ export default defineComponent({
       size: { width: number; height: number; depth: number }
     }> = []
     const treeData: Array<{ position: THREE.Vector3; scale: number }> = []
+
+    // Reference to AmbientLight for dynamic brightness adjustment
+    let ambientLight: THREE.AmbientLight
 
     const handleLoadingError = (error: unknown, assetType: string) => {
       console.error(`Error loading ${assetType}:`, error)
@@ -107,9 +118,14 @@ export default defineComponent({
         console.error('Game container is not available')
       }
 
-      // Add Ambient Light to the Scene
-      const ambientLight = new THREE.AmbientLight(0xffffff, 1)
+      // Add Ambient Light to the Scene with warmer color
+      ambientLight = new THREE.AmbientLight(0xffd4a3, 1) // Changed from 0xffffff to warm orange
       scene.add(ambientLight)
+
+      // Add a directional light for warm highlights
+      const directionalLight = new THREE.DirectionalLight(0xff9933, 0.5) // Warm orange light
+      directionalLight.position.set(1, 1, 0)
+      scene.add(directionalLight)
 
       // Initialize Texture Loader
       const textureLoader = new THREE.TextureLoader()
@@ -132,7 +148,7 @@ export default defineComponent({
       )
 
       // Create Ground Mesh
-      const planeGeometry = new THREE.PlaneGeometry(1000, 1000)
+      const planeGeometry = new THREE.PlaneGeometry(2000, 2000)
       const planeMaterial = new THREE.MeshBasicMaterial({
         map: groundTexture,
         side: THREE.DoubleSide,
@@ -392,6 +408,8 @@ export default defineComponent({
         (texture) => {
           texture.mapping = THREE.EquirectangularReflectionMapping
           scene.background = texture
+          // Add warm color overlay to sky
+          scene.fog = new THREE.FogExp2(0xffd4a3, 0.002)
         },
         undefined,
         (error) => handleLoadingError(error, '5.png'),
@@ -424,7 +442,7 @@ export default defineComponent({
     // Helper function to create a more detailed pine tree geometry
     const createPineTreeGeometry = (): THREE.BufferGeometry => {
       const trunkGeometry = new THREE.CylinderGeometry(0.2, 0.2, 2, 8)
-      const foliageGeometries = []
+      const foliageGeometries: THREE.BufferGeometry[] = []
       const numLayers = 3
       const foliageHeight = 3
       const layerHeight = foliageHeight / numLayers
@@ -456,12 +474,12 @@ export default defineComponent({
     let prevTime = performance.now()
 
     const animate = (time: number) => {
-      const deltaTime = (time - prevTime) // Time in milliseconds
+      const deltaTime = time - prevTime // Time in milliseconds
       prevTime = time
 
       requestAnimationFrame(animate)
 
-      if (modelLoaded && car && !isGameOver.value) {
+      if (modelLoaded && car && !isGameOver.value && !showOverlay.value) {
         // Calculate dynamic acceleration based on current speed
         const speedFactor = Math.abs(velocity) / MAX_SPEED
         const accelerationFactor = 1 - speedFactor
@@ -605,7 +623,7 @@ export default defineComponent({
         }
       }
 
-      // Update explosion animation
+      // Update explosion animation and brightness
       if (isGameOver.value && explosionSprite && explosionStartTime !== null) {
         const elapsed = time - explosionStartTime
         const frame = Math.floor((elapsed / explosionDuration) * totalExplosionFrames)
@@ -615,9 +633,9 @@ export default defineComponent({
           const currentRow = Math.floor(frame / explosionCols)
 
           explosionTexture.offset.x = currentColumn / explosionCols
-          explosionTexture.offset.y = 1 - (currentRow + 1) / explosionRows // Flip Y axis
+          explosionTexture.offset.y = 1 - (currentRow + 1) / explosionRows
         } else {
-          // Remove explosion sprite after animation is complete
+          // Reset everything after animation
           scene.remove(explosionSprite)
           explosionSprite = null
         }
@@ -627,20 +645,33 @@ export default defineComponent({
       renderer.render(scene, camera)
     }
 
-    // Function to handle collision and explosion
+    // Add this with other variable declarations in setup()
+    let explosionAudio: HTMLAudioElement | null = null
+
+    // Update the handleCollision function
     const handleCollision = () => {
       isGameOver.value = true
+
+      // Play explosion sound
+      if (!explosionAudio) {
+        explosionAudio = new Audio('/assets/sounds/boom.mp3')
+        explosionAudio.volume = 0.5
+      }
+      explosionAudio.currentTime = 0 // Reset audio to start
+      explosionAudio.play().catch((error) => {
+        console.error('Error playing explosion sound:', error)
+      })
 
       // Create the explosion sprite
       const explosionMaterial = new THREE.SpriteMaterial({
         map: explosionTexture,
         transparent: true,
-        depthTest: false, // Add this to render on top
-        depthWrite: false, // Add this to prevent writing to the depth buffer
+        depthTest: false,
+        depthWrite: false,
       })
       explosionSprite = new THREE.Sprite(explosionMaterial)
       explosionSprite.position.copy(car.position)
-      explosionSprite.scale.set(15, 15, 2) // Adjust size as necessary
+      explosionSprite.scale.set(25, 25, 2)
 
       // Adjust explosion sprite position to be slightly closer to the camera
       const explosionOffset = new THREE.Vector3(-3, 0, 5)
@@ -651,6 +682,10 @@ export default defineComponent({
       // Record the start time of the explosion
       explosionStartTime = performance.now()
 
+      // Store the camera's current position
+      const cameraPos = camera.position.clone()
+      camera.position.copy(cameraPos)
+
       // Remove the car from the scene
       scene.remove(car)
 
@@ -658,8 +693,7 @@ export default defineComponent({
       velocity = 0
       angularVelocity = 0
 
-      // Automatically reset the game after 2.5 seconds
-      setTimeout(resetGame, 1000)
+      setTimeout(() => resetGame(false), 1000)
     }
 
     // Function to draw the speedometer
@@ -691,8 +725,8 @@ export default defineComponent({
       ctx.lineWidth = 2
       const maxSpeed = 200
       const numTicks = 10
-      const startAngle = (0.8 * Math.PI) / 1 // 225 degrees (bottom left)
-      const endAngle = (2.2 * Math.PI) / 1 // 315 degrees (bottom right)
+      const startAngle = (0.8 * Math.PI) / 1 // 144 degrees
+      const endAngle = (2.2 * Math.PI) / 1 // 396 degrees
 
       for (let i = 0; i <= numTicks; i++) {
         const angle = startAngle + (i / numTicks) * (endAngle - startAngle)
@@ -797,7 +831,7 @@ export default defineComponent({
       }
     }
 
-    const resetGame = () => {
+    const resetGame = (isInitialSpawn = false) => {
       isGameOver.value = false
 
       // Remove explosion sprite from scene
@@ -807,21 +841,52 @@ export default defineComponent({
       }
       explosionStartTime = null
 
-      // Add the car back to the scene
-      scene.add(car)
+      // Reset ambient light intensity to normal
+      ambientLight.intensity = 1
 
-      // Reset car's position to a new random position
-      const maxPosition = 10 * (60 + 15) // rows * blockSpacing
-      const randomX = Math.random() * maxPosition
-      const randomZ = Math.random() * maxPosition
-      car.position.set(randomX, car.position.y, randomZ)
-
-      // Reset car's rotation
-      car.rotation.set(0, 0, 0)
+      // Add the car back to the scene if not already there
+      if (!scene.children.includes(car)) {
+        scene.add(car)
+      }
 
       // Reset variables
       velocity = 0
       angularVelocity = 0
+
+      // If it's the initial spawn, position the car on the road at (0, y, 0)
+      if (isInitialSpawn) {
+        car.position.set(0, car.position.y, 0)
+      } else {
+        // Reset car's position to a new random position
+        const maxPosition = 10 * (60 + 15) // rows * blockSpacing
+        const randomX = (Math.random() - 0.5) * maxPosition
+        const randomZ = (Math.random() - 0.5) * maxPosition
+        car.position.set(randomX, car.position.y, randomZ)
+      }
+
+      // Reset car's rotation
+      car.rotation.set(0, 0, 0)
+    }
+
+    // Helper function to play background music
+    const playBackgroundMusic = () => {
+      if (!backgroundAudio) {
+        backgroundAudio = new Audio('/assets/sounds/1080.mp3')
+        backgroundAudio.loop = true
+        backgroundAudio.volume = 0.5
+      }
+      backgroundAudio.play().catch((error) => {
+        console.error('Error playing background music:', error)
+      })
+    }
+
+    // Function to start the game when "Play" is clicked
+    const startGame = () => {
+      showOverlay.value = false
+      // Spawn the player on the road
+      resetGame(true)
+      // Start background music
+      playBackgroundMusic()
     }
 
     onMounted(onMountedHandler)
@@ -851,12 +916,26 @@ export default defineComponent({
         })
       }
       window.removeEventListener('resize', handleResize)
+
+      // Stop background music
+      if (backgroundAudio) {
+        backgroundAudio.pause()
+        backgroundAudio = null
+      }
+
+      // Stop and cleanup explosion audio
+      if (explosionAudio) {
+        explosionAudio.pause()
+        explosionAudio = null
+      }
     })
 
     return {
       gameContainer,
       speedometerCanvas,
       isGameOver,
+      showOverlay,
+      startGame,
     }
   },
 })
@@ -894,5 +973,30 @@ export default defineComponent({
   height: 100%;
 }
 
-/* Removed reset-button styles */
+/* Added styles for the overlay */
+.overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: black; /* Or transparent if you prefer */
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  z-index: 10; /* Ensure the overlay is on top */
+}
+
+.overlay-image {
+  max-width: 100%;
+  max-height: 80%;
+}
+
+.play-button {
+  margin-top: 20px;
+  padding: 10px 20px;
+  font-size: 24px;
+  cursor: pointer;
+}
 </style>
