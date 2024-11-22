@@ -871,7 +871,7 @@ export default defineComponent({
     // Helper function to play background music
     const playBackgroundMusic = () => {
       if (!backgroundAudio) {
-        backgroundAudio = new Audio('/assets/sounds/1080.mp3')
+        backgroundAudio = new Audio('/assets/sounds/barseback.mp3')
         backgroundAudio.loop = true
         backgroundAudio.volume = 0.5
       }
