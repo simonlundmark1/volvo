@@ -1,12 +1,23 @@
 <template>
   <div class="game-container" ref="gameContainer">
-    <!-- Overlay added -->
+    <!-- Initial Overlay -->
     <div v-if="showOverlay" class="overlay">
       <img src="/assets/images/start2.png" alt="Start Screen" class="overlay-image" />
       <button class="play-button" @click="startGame">Play</button>
     </div>
+    <!-- Vehicle Selection Screen -->
+    <div v-else-if="showVehicleSelection" class="vehicle-selection-overlay">
+      <div class="vehicle-stats">
+        <h2>Volvo 940</h2>
+        <p>Speed: Very Fast</p>
+        <p>Handling: Good</p>
+        <!-- Add more stats as needed -->
+        <p>Press Enter to select</p>
+      </div>
+    </div>
   </div>
-  <div class="speedometer-container">
+  <!-- Speedometer -->
+  <div v-if="!showOverlay && !showVehicleSelection" class="speedometer-container">
     <canvas ref="speedometerCanvas"></canvas>
   </div>
 </template>
@@ -41,11 +52,18 @@ export default defineComponent({
     let explosionSprite: THREE.Sprite | null = null
     let explosionStartTime: number | null = null
 
-    // Added for the overlay and background music
+    // Overlay and Background Music
     const showOverlay = ref(true)
     let backgroundAudio: HTMLAudioElement | null = null
 
-    // Constants for acceleration and speed
+    // Vehicle Selection State
+    const showVehicleSelection = ref(false)
+    let vehicleSelectionScene: THREE.Scene
+    let vehicleSelectionCamera: THREE.PerspectiveCamera
+    let vehicleSelectionCar: THREE.Object3D
+    let vehicleSelectionMusic: HTMLAudioElement | null = null
+
+    // Constants for Acceleration and Speed
     const MAX_SPEED = 20
     const MAX_REVERSE_SPEED = -10
     const MAX_ACCELERATION = 0.3
@@ -56,32 +74,118 @@ export default defineComponent({
     const MAX_STEERING_SENSITIVITY = 0.25
     const MIN_STEERING_SENSITIVITY = 0.1
 
-    // Added constants for tilting
+    // Constants for Tilting
     const MAX_TILT_ANGLE = THREE.MathUtils.degToRad(-15)
     const TILT_LERP_FACTOR = 0.3
     const MAX_TURN_RATE = 0.02
 
-    // Variable to track the current tilt angle of the car
+    // Current Tilt Angle of the Car
     let currentTiltAngle = 0
 
-    // Reduced renderer dimensions for improved performance
+    // Renderer Dimensions for Performance
     const RENDERER_WIDTH = 480
     const RENDERER_HEIGHT = 360
 
-    // Arrays to store positions and sizes of houses and trees
+    // Data for Houses and Trees
     const houseData: Array<{
       position: THREE.Vector3
       size: { width: number; height: number; depth: number }
     }> = []
     const treeData: Array<{ position: THREE.Vector3; scale: number }> = []
 
-    // Reference to AmbientLight for dynamic brightness adjustment
+    // Ambient Light Reference
     let ambientLight: THREE.AmbientLight
 
     const handleLoadingError = (error: unknown, assetType: string) => {
       console.error(`Error loading ${assetType}:`, error)
     }
 
+    // Explosion Texture and Animation Parameters
+    let explosionTexture: THREE.Texture
+    const explosionRows = 4 // Number of rows in the sprite sheet
+    const explosionCols = 4 // Number of columns in the sprite sheet
+    const totalExplosionFrames = explosionRows * explosionCols
+    const explosionDuration = 1000 // Duration of the explosion animation in milliseconds
+
+    // Explosion Audio
+    let explosionAudio: HTMLAudioElement | null = null
+
+    // Initialize Vehicle Selection Scene
+    const initVehicleSelectionScene = () => {
+      // Initialize Scene
+      vehicleSelectionScene = new THREE.Scene()
+
+      // Initialize Camera
+      vehicleSelectionCamera = new THREE.PerspectiveCamera(
+        90, // Field of View
+        RENDERER_WIDTH / RENDERER_HEIGHT,
+        0.1,
+        1000,
+      )
+      vehicleSelectionCamera.position.set(7, 2, -2 )
+      vehicleSelectionCamera.lookAt(0, 0, 0)
+
+      // Set Background to Black
+      vehicleSelectionScene.background = new THREE.TextureLoader().load('/assets/images/showroom.webp')
+
+      // Add Ambient Light
+      const ambientLightSelection = new THREE.AmbientLight(0xffffff, 0.1)
+      vehicleSelectionScene.add(ambientLightSelection)
+
+      // Load the Car Model
+      const objLoader = new OBJLoader()
+      objLoader.load(
+        '/assets/models/model_0.obj',
+        (object) => {
+          vehicleSelectionCar = object
+
+          // Set Scale and Position
+          vehicleSelectionCar.scale.set(0.01, 0.01, 0.01)
+          vehicleSelectionCar.position.set(0, -2, 0)
+
+          // Rotate to Face Positive Z-axis
+          vehicleSelectionCar.rotation.y += Math.PI * 0.1
+
+          // Load Texture for the Car
+          const textureLoader = new THREE.TextureLoader()
+          textureLoader.load(
+            '/assets/models/Volvo_Diffusenew.png',
+            (texture: THREE.Texture) => {
+              texture.wrapS = THREE.RepeatWrapping
+              texture.wrapT = THREE.RepeatWrapping
+              texture.encoding = THREE.sRGBEncoding
+              texture.minFilter = THREE.LinearMipMapNearestFilter
+              texture.magFilter = THREE.LinearFilter
+              texture.generateMipmaps = true
+              texture.anisotropy = Math.min(renderer.capabilities.getMaxAnisotropy(), 4)
+
+              // Apply Texture to All Meshes in the Car Object
+              vehicleSelectionCar.traverse((node) => {
+                if ((node as THREE.Mesh).isMesh) {
+                  const mesh = node as THREE.Mesh
+                  mesh.material = new THREE.MeshBasicMaterial({
+                    map: texture,
+                  })
+                  mesh.castShadow = false
+                  mesh.receiveShadow = false
+                  mesh.material.side = THREE.DoubleSide
+                }
+              })
+            },
+            undefined,
+            (error) => handleLoadingError(error, 'Volvo_Diffusenew.png'),
+          )
+
+          // Add Car to the Vehicle Selection Scene
+          vehicleSelectionScene.add(vehicleSelectionCar)
+          console.log('Vehicle selection car model loaded successfully with the correct texture')
+        },
+        undefined,
+        (error) => handleLoadingError(error, 'model_0.obj'),
+      )
+    }
+
+    // Initialize Main Game Scene
     const initScene = () => {
       // Initialize Scene
       scene = markRaw(new THREE.Scene())
@@ -118,11 +222,11 @@ export default defineComponent({
         console.error('Game container is not available')
       }
 
-      // Add Ambient Light to the Scene with warmer color
-      ambientLight = new THREE.AmbientLight(0xffd4a3, 1) // Changed from 0xffffff to warm orange
+      // Add Ambient Light with Warmer Color
+      ambientLight = new THREE.AmbientLight(0xffd4a3, 1) // Warm orange
       scene.add(ambientLight)
 
-      // Add a directional light for warm highlights
+      // Add Directional Light for Warm Highlights
       const directionalLight = new THREE.DirectionalLight(0xff9933, 0.5) // Warm orange light
       directionalLight.position.set(1, 1, 0)
       scene.add(directionalLight)
@@ -175,49 +279,48 @@ export default defineComponent({
         (error) => handleLoadingError(error, 'road texture'),
       )
 
-      // Define road and grid properties
+      // Define Road and Grid Properties
       const roadWidth = 15
       const roadHeight = 0.02
       const blockSize = 60
-      // Increased rows and columns to make the game world bigger
       const rows = 10
       const columns = 10
       const blockSpacing = blockSize + roadWidth
 
-      // Create the material for the roads with the road texture
+      // Create Road Material
       const roadMaterial = new THREE.MeshBasicMaterial({
         map: roadTexture,
       })
 
-      // Create horizontal roads (X-axis roads)
+      // Create Horizontal Roads (X-axis)
       for (let row = 0; row <= rows; row++) {
         const roadGeometry = new THREE.BoxGeometry(columns * blockSpacing, roadHeight, roadWidth)
         const roadMesh = new THREE.Mesh(roadGeometry, roadMaterial)
 
-        // Position each horizontal road
+        // Position Each Horizontal Road
         roadMesh.position.set(
           (columns * blockSpacing) / 2 - blockSpacing / 2,
           roadHeight / 2,
           row * blockSpacing - blockSpacing / 2,
         )
 
-        // Add the horizontal road to the scene
+        // Add to Scene
         scene.add(roadMesh)
       }
 
-      // Create vertical roads (Z-axis roads)
+      // Create Vertical Roads (Z-axis)
       for (let col = 0; col <= columns; col++) {
         const roadGeometry = new THREE.BoxGeometry(roadWidth, roadHeight, rows * blockSpacing)
         const roadMesh = new THREE.Mesh(roadGeometry, roadMaterial)
 
-        // Position each vertical road
+        // Position Each Vertical Road
         roadMesh.position.set(
           col * blockSpacing - blockSpacing / 2,
           roadHeight / 2,
           (rows * blockSpacing) / 2 - blockSpacing / 2,
         )
 
-        // Add the vertical road to the scene
+        // Add to Scene
         scene.add(roadMesh)
       }
 
@@ -238,7 +341,7 @@ export default defineComponent({
         (error) => handleLoadingError(error, 'house texture'),
       )
 
-      // Prepare geometries and materials for instancing
+      // Prepare Geometries and Materials for Instancing
       const pineTreeGeometry = createPineTreeGeometry()
       const pineTreeMaterial = new THREE.MeshBasicMaterial({ color: 0x228b22 })
 
@@ -247,7 +350,7 @@ export default defineComponent({
         map: houseTexture,
       })
 
-      // Calculate total number of houses and trees
+      // Calculate Total Number of Houses and Trees
       let totalHouses = 0
       let totalTrees = 0
 
@@ -266,24 +369,24 @@ export default defineComponent({
         totalTrees,
       )
 
-      // Index counters for instances
+      // Index Counters for Instances
       let houseIndex = 0
       let treeIndex = 0
 
-      // Add Houses and Trees using InstancedMesh
+      // Add Houses and Trees Using InstancedMesh
       const dummy = new THREE.Object3D()
 
       for (let row = 0; row < rows; row++) {
         for (let col = 0; col < columns; col++) {
-          // Center position of each block
+          // Center Position of Each Block
           const blockCenterX = col * blockSpacing
           const blockCenterZ = row * blockSpacing
 
-          // Randomly decide the number of houses in this block
+          // Randomly Decide the Number of Houses in This Block
           const houseCount = Math.floor(Math.random() * 3) + 1
 
           for (let i = 0; i < houseCount; i++) {
-            // Randomize position within the block
+            // Randomize Position Within the Block
             const buffer = roadWidth / 2 + 5
             const offsetX = (Math.random() - 0.5) * (blockSize - roadWidth - buffer * 2)
             const offsetZ = (Math.random() - 0.5) * (blockSize - roadWidth - buffer * 2)
@@ -291,21 +394,21 @@ export default defineComponent({
             const houseX = blockCenterX + offsetX
             const houseZ = blockCenterZ + offsetZ
 
-            // Randomize house size
+            // Randomize House Size
             const width = Math.random() * 20 + 5
             const height = Math.random() * 20 + 10
             const depth = Math.random() * 10 + 5
 
-            // Update dummy object for transformation
+            // Update Dummy Object for Transformation
             dummy.position.set(houseX, height / 2, houseZ)
             dummy.scale.set(width / 10, height / 20, depth / 10)
             dummy.updateMatrix()
 
-            // Set the instance matrix
+            // Set the Instance Matrix
             houseInstancedMesh.setMatrixAt(houseIndex, dummy.matrix)
             houseIndex++
 
-            // Store house data for collision detection
+            // Store House Data for Collision Detection
             houseData.push({
               position: new THREE.Vector3(houseX, height / 2, houseZ),
               size: { width: width / 10, height: height / 20, depth: depth / 10 },
@@ -315,7 +418,7 @@ export default defineComponent({
           // Add Additional Trees in the Block
           const additionalTreesCount = 3 // Number of additional trees per block
           for (let t = 0; t < additionalTreesCount; t++) {
-            // Random position within the block
+            // Random Position Within the Block
             const buffer = roadWidth / 2 + 10
             const treeOffsetX = (Math.random() - 0.5) * (blockSize - roadWidth - buffer * 2)
             const treeOffsetZ = (Math.random() - 0.5) * (blockSize - roadWidth - buffer * 2)
@@ -323,19 +426,19 @@ export default defineComponent({
             const treeX = blockCenterX + treeOffsetX
             const treeZ = blockCenterZ + treeOffsetZ
 
-            // Randomize tree scale
+            // Randomize Tree Scale
             const treeScale = 0.8 + Math.random() * 0.4
 
-            // Update dummy object for transformation
+            // Update Dummy Object for Transformation
             dummy.position.set(treeX, 1, treeZ) // Positioned at y=1 to sit on the ground
             dummy.scale.set(treeScale, treeScale, treeScale)
             dummy.updateMatrix()
 
-            // Set the instance matrix
+            // Set the Instance Matrix
             treeInstancedMesh.setMatrixAt(treeIndex, dummy.matrix)
             treeIndex++
 
-            // Store tree data for collision detection
+            // Store Tree Data for Collision Detection
             treeData.push({
               position: new THREE.Vector3(treeX, 1, treeZ),
               scale: treeScale,
@@ -344,27 +447,27 @@ export default defineComponent({
         }
       }
 
-      // Add InstancedMeshes to the scene
+      // Add InstancedMeshes to the Scene
       scene.add(houseInstancedMesh)
       scene.add(treeInstancedMesh)
 
       // Load OBJ Model as Car
-      const objLoader = new OBJLoader()
+      const objLoaderMain = new OBJLoader()
 
-      // Load the car model
-      objLoader.load(
+      // Load the Car Model
+      objLoaderMain.load(
         '/assets/models/model_0.obj',
         (object) => {
           car = object
 
-          // Set the scale and position of the car
+          // Set Scale and Position
           car.scale.set(0.01, 0.01, 0.01)
           car.position.y = -1.65
 
-          // Rotate the Car Model to Face Positive Z-axis
+          // Rotate to Face Positive Z-axis
           car.rotation.y += Math.PI
 
-          // Load the texture for the car
+          // Load Texture for the Car
           textureLoader.load(
             '/assets/models/Volvo_Diffusenew.png',
             (texture: THREE.Texture) => {
@@ -376,7 +479,7 @@ export default defineComponent({
               texture.generateMipmaps = true
               texture.anisotropy = Math.min(renderer.capabilities.getMaxAnisotropy(), 4)
 
-              // Apply the texture to all the meshes in the car object
+              // Apply Texture to All Meshes in the Car Object
               car.traverse((node) => {
                 if ((node as THREE.Mesh).isMesh) {
                   const mesh = node as THREE.Mesh
@@ -393,6 +496,7 @@ export default defineComponent({
             (error) => handleLoadingError(error, 'Volvo_Diffusenew.png'),
           )
 
+          // Add Car to the Scene
           scene.add(car)
           modelLoaded = true
           console.log('Car model loaded successfully with the correct texture')
@@ -401,21 +505,21 @@ export default defineComponent({
         (error) => handleLoadingError(error, 'model_0.obj'),
       )
 
-      // Load the equirectangular texture for background
+      // Load Equirectangular Texture for Background
       const textureLoader2 = new THREE.TextureLoader()
       textureLoader2.load(
         '/assets/images/6.png',
         (texture) => {
           texture.mapping = THREE.EquirectangularReflectionMapping
           scene.background = texture
-          // Add warm color overlay to sky
+          // Add Warm Color Overlay to Sky
           scene.fog = new THREE.FogExp2(0xffd4a3, 0.002)
         },
         undefined,
-        (error) => handleLoadingError(error, '5.png'),
+        (error) => handleLoadingError(error, '6.png'),
       )
 
-      // Load explosion sprite sheet texture
+      // Load Explosion Sprite Sheet Texture
       explosionTexture = textureLoader.load(
         '/assets/images/exp2.png',
         (texture: THREE.Texture) => {
@@ -432,14 +536,7 @@ export default defineComponent({
       animate()
     }
 
-    // Explosion texture and animation parameters
-    let explosionTexture: THREE.Texture
-    const explosionRows = 4 // Number of rows in the sprite sheet
-    const explosionCols = 4 // Number of columns in the sprite sheet
-    const totalExplosionFrames = explosionRows * explosionCols
-    const explosionDuration = 1000 // Duration of the explosion animation in milliseconds
-
-    // Helper function to create a more detailed pine tree geometry
+    // Helper Function to Create Detailed Pine Tree Geometry
     const createPineTreeGeometry = (): THREE.BufferGeometry => {
       const trunkGeometry = new THREE.CylinderGeometry(0.2, 0.2, 2, 8)
       const foliageGeometries: THREE.BufferGeometry[] = []
@@ -454,10 +551,10 @@ export default defineComponent({
         foliageGeometries.push(coneGeometry)
       }
 
-      // Merge all foliage layers
+      // Merge All Foliage Layers
       const foliageGeometry = BufferGeometryUtils.mergeGeometries(foliageGeometries, false)
 
-      // Merge trunk and foliage geometries
+      // Merge Trunk and Foliage Geometries
       const treeGeometry = BufferGeometryUtils.mergeGeometries(
         [trunkGeometry, foliageGeometry],
         false,
@@ -479,180 +576,192 @@ export default defineComponent({
 
       requestAnimationFrame(animate)
 
-      if (modelLoaded && car && !isGameOver.value && !showOverlay.value) {
-        // Calculate dynamic acceleration based on current speed
-        const speedFactor = Math.abs(velocity) / MAX_SPEED
-        const accelerationFactor = 1 - speedFactor
-        const currentAcceleration =
-          MIN_ACCELERATION + (MAX_ACCELERATION - MIN_ACCELERATION) * accelerationFactor
-
-        // Handle acceleration and deceleration
-        if (keys.ArrowUp) {
-          velocity += currentAcceleration * (deltaTime / 1000)
+      if (showVehicleSelection.value) {
+        // Vehicle Selection Screen Rendering
+        if (vehicleSelectionCar) {
+          vehicleSelectionCar.rotation.y += 0.007 // Slow spin
         }
-        if (keys.ArrowDown) {
-          velocity -= DECELERATION * (deltaTime / 1000)
-        }
+        renderer.render(vehicleSelectionScene, vehicleSelectionCamera)
+      } else {
+        // Game Running or Game Over
+        if (modelLoaded && car && !isGameOver.value && !showOverlay.value) {
+          // Main Game Logic (movement, controls, etc.)
 
-        // Apply friction when no keys are pressed
-        if (!keys.ArrowUp && !keys.ArrowDown) {
-          velocity *= FRICTION
-        }
+          // Calculate Dynamic Acceleration Based on Current Speed
+          const speedFactor = Math.abs(velocity) / MAX_SPEED
+          const accelerationFactor = 1 - speedFactor
+          const currentAcceleration =
+            MIN_ACCELERATION + (MAX_ACCELERATION - MIN_ACCELERATION) * accelerationFactor
 
-        // Clamp the velocity
-        velocity = THREE.MathUtils.clamp(velocity, MAX_REVERSE_SPEED, MAX_SPEED)
-
-        // Threshold to stop the car when speed is very low
-        const velocityThreshold = 0.001
-        if (Math.abs(velocity) < velocityThreshold) {
-          velocity = 0
-        }
-
-        // Move the car forward or backward
-        car.translateZ(velocity * (deltaTime / 1000) * 100) // Adjusted multiplier
-
-        const minSteerSpeed = Math.PI / 100
-        let steerFactor = 0
-        if (Math.abs(velocity) > minSteerSpeed) {
-          steerFactor = Math.sign(velocity)
-        }
-
-        // Calculate dynamic steering sensitivity based on current speed
-        const steeringSensitivity =
-          MAX_STEERING_SENSITIVITY -
-          (MAX_STEERING_SENSITIVITY - MIN_STEERING_SENSITIVITY) * speedFactor
-
-        // Adjust rotation acceleration
-        const baseRotationAcceleration = 0.015 // Slightly reduced base rotation acceleration
-        const dynamicRotationAcceleration = baseRotationAcceleration * steeringSensitivity
-
-        if (steerFactor !== 0) {
-          if (keys.ArrowLeft) {
-            angularVelocity += dynamicRotationAcceleration * steerFactor
+          // Handle Acceleration and Deceleration
+          if (keys.ArrowUp) {
+            velocity += currentAcceleration * (deltaTime / 1000)
           }
-          if (keys.ArrowRight) {
-            angularVelocity -= dynamicRotationAcceleration * steerFactor
+          if (keys.ArrowDown) {
+            velocity -= DECELERATION * (deltaTime / 1000)
           }
-        } else {
-          angularVelocity = 0
-        }
 
-        angularVelocity *= rotationDamping
+          // Apply Friction When No Keys Are Pressed
+          if (!keys.ArrowUp && !keys.ArrowDown) {
+            velocity *= FRICTION
+          }
 
-        const angularThreshold = 0.0001
-        if (Math.abs(angularVelocity) < angularThreshold) {
-          angularVelocity = 0
-        }
+          // Clamp the Velocity
+          velocity = THREE.MathUtils.clamp(velocity, MAX_REVERSE_SPEED, MAX_SPEED)
 
-        angularVelocity = THREE.MathUtils.clamp(angularVelocity, -0.5, 0.5) // Adjusted turning
+          // Threshold to Stop the Car When Speed Is Very Low
+          const velocityThreshold = 0.001
+          if (Math.abs(velocity) < velocityThreshold) {
+            velocity = 0
+          }
 
-        if (steerFactor !== 0) {
-          car.rotation.y += angularVelocity * (deltaTime / 1000) * 30 // Adjusted multiplier
-        }
+          // Move the Car Forward or Backward
+          car.translateZ(velocity * (deltaTime / 1000) * 100) // Adjusted multiplier
 
-        // Calculate tilt angle based on speed and angular velocity
-        let targetTiltAngle = 0
-        if (angularVelocity !== 0 && Math.abs(velocity) > minSteerSpeed) {
-          const tiltSpeedFactor = Math.abs(velocity) / MAX_SPEED
-          targetTiltAngle = -MAX_TILT_ANGLE * (angularVelocity / MAX_TURN_RATE) * tiltSpeedFactor
-        }
+          const minSteerSpeed = Math.PI / 100
+          let steerFactor = 0
+          if (Math.abs(velocity) > minSteerSpeed) {
+            steerFactor = Math.sign(velocity)
+          }
 
-        // Smoothly interpolate current tilt angle towards target tilt angle
-        currentTiltAngle = THREE.MathUtils.lerp(currentTiltAngle, targetTiltAngle, TILT_LERP_FACTOR)
+          // Calculate Dynamic Steering Sensitivity Based on Current Speed
+          const steeringSensitivity =
+            MAX_STEERING_SENSITIVITY -
+            (MAX_STEERING_SENSITIVITY - MIN_STEERING_SENSITIVITY) * speedFactor
 
-        // Apply tilt to the car model
-        car.rotation.z = currentTiltAngle
+          // Adjust Rotation Acceleration
+          const baseRotationAcceleration = 0.015 // Slightly reduced base rotation acceleration
+          const dynamicRotationAcceleration = baseRotationAcceleration * steeringSensitivity
 
-        // Calculate speed in km/h
-        const speedInKmH = Math.abs(velocity) * 100
+          if (steerFactor !== 0) {
+            if (keys.ArrowLeft) {
+              angularVelocity += dynamicRotationAcceleration * steerFactor
+            }
+            if (keys.ArrowRight) {
+              angularVelocity -= dynamicRotationAcceleration * steerFactor
+            }
+          } else {
+            angularVelocity = 0
+          }
 
-        // Draw the speedometer
-        drawSpeedometer(speedInKmH)
+          angularVelocity *= rotationDamping
 
-        // Camera Follow Logic
-        const desiredCameraOffset = new THREE.Vector3(1, 5, -5)
-        const relativeCameraOffset = desiredCameraOffset.clone()
+          const angularThreshold = 0.0001
+          if (Math.abs(angularVelocity) < angularThreshold) {
+            angularVelocity = 0
+          }
 
-        // Rotate the offset based on the car's rotation
-        relativeCameraOffset.applyAxisAngle(new THREE.Vector3(0, 1, 0), car.rotation.y)
+          angularVelocity = THREE.MathUtils.clamp(angularVelocity, -0.5, 0.5) // Adjusted turning
 
-        const desiredCameraPosition = car.position.clone().add(relativeCameraOffset)
+          if (steerFactor !== 0) {
+            car.rotation.y += angularVelocity * (deltaTime / 1000) * 30 // Adjusted multiplier
+          }
 
-        // Smoothly interpolate the camera position
-        camera.position.lerp(desiredCameraPosition, 0.05) // Adjusted lerp factor
+          // Calculate Tilt Angle Based on Speed and Angular Velocity
+          let targetTiltAngle = 0
+          if (angularVelocity !== 0 && Math.abs(velocity) > minSteerSpeed) {
+            const tiltSpeedFactor = Math.abs(velocity) / MAX_SPEED
+            targetTiltAngle =
+              -MAX_TILT_ANGLE * (angularVelocity / MAX_TURN_RATE) * tiltSpeedFactor
+          }
 
-        // Create a look-at point in front of and above the car
-        const lookAtOffset = new THREE.Vector3(0, 2, 10)
-        lookAtOffset.applyAxisAngle(new THREE.Vector3(0, 1, 0), car.rotation.y)
-        const lookAtPoint = car.position.clone().add(lookAtOffset)
+          // Smoothly Interpolate Current Tilt Angle Towards Target Tilt Angle
+          currentTiltAngle = THREE.MathUtils.lerp(
+            currentTiltAngle,
+            targetTiltAngle,
+            TILT_LERP_FACTOR,
+          )
 
-        // Make the camera look at this point
-        camera.lookAt(lookAtPoint)
-        camera.position.y = THREE.MathUtils.clamp(camera.position.y, 1, 20)
+          // Apply Tilt to the Car Model
+          car.rotation.z = currentTiltAngle
 
-        // Collision detection
-        const carPosition = car.position.clone()
+          // Calculate Speed in km/h
+          const speedInKmH = Math.abs(velocity) * 100
 
-        // Check collision with houses
-        for (let i = 0; i < houseData.length; i++) {
-          const house = houseData[i]
-          const dx = carPosition.x - house.position.x
-          const dz = carPosition.z - house.position.z
-          const distance = Math.sqrt(dx * dx + dz * dz)
-          const collisionDistance = 5 // Adjust as necessary
+          // Draw the Speedometer
+          drawSpeedometer(speedInKmH)
 
-          if (distance < collisionDistance) {
-            // Collision detected
-            handleCollision()
-            break
+          // Camera Follow Logic
+          const desiredCameraOffset = new THREE.Vector3(1, 5, -5)
+          const relativeCameraOffset = desiredCameraOffset.clone()
+
+          // Rotate the Offset Based on the Car's Rotation
+          relativeCameraOffset.applyAxisAngle(new THREE.Vector3(0, 1, 0), car.rotation.y)
+
+          const desiredCameraPosition = car.position.clone().add(relativeCameraOffset)
+
+          // Smoothly Interpolate the Camera Position
+          camera.position.lerp(desiredCameraPosition, 0.05) // Adjusted lerp factor
+
+          // Create a Look-at Point in Front of and Above the Car
+          const lookAtOffset = new THREE.Vector3(0, 2, 10)
+          lookAtOffset.applyAxisAngle(new THREE.Vector3(0, 1, 0), car.rotation.y)
+          const lookAtPoint = car.position.clone().add(lookAtOffset)
+
+          // Make the Camera Look at This Point
+          camera.lookAt(lookAtPoint)
+          camera.position.y = THREE.MathUtils.clamp(camera.position.y, 1, 20)
+
+          // Collision Detection
+          const carPosition = car.position.clone()
+
+          // Check Collision with Houses
+          for (let i = 0; i < houseData.length; i++) {
+            const house = houseData[i]
+            const dx = carPosition.x - house.position.x
+            const dz = carPosition.z - house.position.z
+            const distance = Math.sqrt(dx * dx + dz * dz)
+            const collisionDistance = 5 // Adjust as necessary
+
+            if (distance < collisionDistance) {
+              // Collision Detected
+              handleCollision()
+              break
+            }
+          }
+
+          // Check Collision with Trees
+          for (let i = 0; i < treeData.length; i++) {
+            const tree = treeData[i]
+            const dx = carPosition.x - tree.position.x
+            const dz = carPosition.z - tree.position.z
+            const distance = Math.sqrt(dx * dx + dz * dz)
+            const collisionDistance = 3 // Adjust as necessary
+
+            if (distance < collisionDistance) {
+              handleCollision()
+              break
+            }
           }
         }
 
-        // Check collision with trees
-        for (let i = 0; i < treeData.length; i++) {
-          const tree = treeData[i]
-          const dx = carPosition.x - tree.position.x
-          const dz = carPosition.z - tree.position.z
-          const distance = Math.sqrt(dx * dx + dz * dz)
-          const collisionDistance = 3 // Adjust as necessary
+        // Update Explosion Animation
+        if (isGameOver.value && explosionSprite && explosionStartTime !== null) {
+          const elapsed = time - explosionStartTime
+          const frame = Math.floor((elapsed / explosionDuration) * totalExplosionFrames)
 
-          if (distance < collisionDistance) {
-            handleCollision()
-            break
+          if (frame < totalExplosionFrames) {
+            const currentColumn = frame % explosionCols
+            const currentRow = Math.floor(frame / explosionCols)
+
+            explosionTexture.offset.x = currentColumn / explosionCols
+            explosionTexture.offset.y = 1 - (currentRow + 1) / explosionRows
+          } else {
+            // After Explosion Animation Ends
+            scene.remove(explosionSprite)
+            explosionSprite = null
           }
         }
+
+        // Always Render the Scene
+        renderer.render(scene, camera)
       }
-
-      // Update explosion animation and brightness
-      if (isGameOver.value && explosionSprite && explosionStartTime !== null) {
-        const elapsed = time - explosionStartTime
-        const frame = Math.floor((elapsed / explosionDuration) * totalExplosionFrames)
-
-        if (frame < totalExplosionFrames) {
-          const currentColumn = frame % explosionCols
-          const currentRow = Math.floor(frame / explosionCols)
-
-          explosionTexture.offset.x = currentColumn / explosionCols
-          explosionTexture.offset.y = 1 - (currentRow + 1) / explosionRows
-        } else {
-          // Reset everything after animation
-          scene.remove(explosionSprite)
-          explosionSprite = null
-        }
-      }
-
-      // Render the Scene
-      renderer.render(scene, camera)
     }
 
-    // Add this with other variable declarations in setup()
-    let explosionAudio: HTMLAudioElement | null = null
-
-    // Update the handleCollision function
     const handleCollision = () => {
       isGameOver.value = true
 
-      // Play explosion sound
+      // Play Explosion Sound
       if (!explosionAudio) {
         explosionAudio = new Audio('/assets/sounds/boom.mp3')
         explosionAudio.volume = 0.5
@@ -662,7 +771,7 @@ export default defineComponent({
         console.error('Error playing explosion sound:', error)
       })
 
-      // Create the explosion sprite
+      // Create the Explosion Sprite
       const explosionMaterial = new THREE.SpriteMaterial({
         map: explosionTexture,
         transparent: true,
@@ -673,30 +782,30 @@ export default defineComponent({
       explosionSprite.position.copy(car.position)
       explosionSprite.scale.set(25, 25, 2)
 
-      // Adjust explosion sprite position to be slightly closer to the camera
+      // Adjust Explosion Sprite Position to Be Slightly Closer to the Camera
       const explosionOffset = new THREE.Vector3(-3, 0, 5)
       explosionSprite.position.add(explosionOffset)
 
       scene.add(explosionSprite)
 
-      // Record the start time of the explosion
+      // Record the Start Time of the Explosion
       explosionStartTime = performance.now()
 
-      // Store the camera's current position
+      // Store the Camera's Current Position
       const cameraPos = camera.position.clone()
       camera.position.copy(cameraPos)
 
-      // Remove the car from the scene
+      // Remove the Car from the Scene
       scene.remove(car)
 
-      // Stop the car's movement
+      // Stop the Car's Movement
       velocity = 0
       angularVelocity = 0
 
       setTimeout(() => resetGame(false), 1000)
     }
 
-    // Function to draw the speedometer
+    // Function to Draw the Speedometer
     const drawSpeedometer = (speed: number) => {
       if (!speedometerContext || !speedometerCanvas.value) return
 
@@ -707,20 +816,20 @@ export default defineComponent({
 
       ctx.clearRect(0, 0, width, height)
 
-      // Draw the speedometer background
+      // Draw the Speedometer Background
       ctx.beginPath()
       ctx.arc(width / 2, height / 2, width / 2 - 5, 0, 2 * Math.PI)
       ctx.fillStyle = '#222' // Dark background for retro look
       ctx.fill()
 
-      // Draw the outer rim
+      // Draw the Outer Rim
       ctx.beginPath()
       ctx.arc(width / 2, height / 2, width / 2 - 5, 0, 2 * Math.PI)
       ctx.strokeStyle = '#555'
       ctx.lineWidth = 5
       ctx.stroke()
 
-      // Draw the speedometer ticks
+      // Draw the Speedometer Ticks
       ctx.strokeStyle = '#ccc'
       ctx.lineWidth = 2
       const maxSpeed = 200
@@ -739,7 +848,7 @@ export default defineComponent({
         ctx.lineTo(x2, y2)
         ctx.stroke()
 
-        // Draw speed labels at each tick
+        // Draw Speed Labels at Each Tick
         const speedLabel = (i * (maxSpeed / numTicks)).toString()
         const labelX = width / 2 + (width / 2 - 40) * Math.cos(angle)
         const labelY = height / 2 + (height / 2 - 40) * Math.sin(angle) + 5
@@ -749,7 +858,7 @@ export default defineComponent({
         ctx.fillText(speedLabel, labelX, labelY)
       }
 
-      // Draw the needle
+      // Draw the Needle
       const needleAngle = startAngle + (speed / maxSpeed) * (endAngle - startAngle)
       const needleLength = width / 2 - 40
       const needleX = width / 2 + needleLength * Math.cos(needleAngle)
@@ -762,13 +871,13 @@ export default defineComponent({
       ctx.lineTo(needleX, needleY)
       ctx.stroke()
 
-      // Draw the center circle
+      // Draw the Center Circle
       ctx.beginPath()
       ctx.arc(width / 2, height / 2, 5, 0, 2 * Math.PI)
       ctx.fillStyle = '#fff'
       ctx.fill()
 
-      // Draw the speed text
+      // Draw the Speed Text
       ctx.fillStyle = '#fff'
       ctx.font = '12px Arial'
       ctx.textAlign = 'center'
@@ -776,9 +885,25 @@ export default defineComponent({
     }
 
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key in keys) {
-        event.preventDefault()
-        keys[event.key] = true
+      if (showVehicleSelection.value) {
+        if (event.key === 'Enter') {
+          event.preventDefault()
+          // Start the Game
+          showVehicleSelection.value = false
+          resetGame(true)
+          // Stop Vehicle Selection Music
+          if (vehicleSelectionMusic) {
+            vehicleSelectionMusic.pause()
+            vehicleSelectionMusic.currentTime = 0
+          }
+          // Start Background Music
+          playBackgroundMusic()
+        }
+      } else {
+        if (event.key in keys) {
+          event.preventDefault()
+          keys[event.key] = true
+        }
       }
     }
 
@@ -805,13 +930,19 @@ export default defineComponent({
         width = containerHeight * aspectRatio
       }
 
-      // Keep the renderer size fixed to maintain pixelation
+      // Keep the Renderer Size Fixed to Maintain Pixelation
       renderer.domElement.style.width = `${width}px`
       renderer.domElement.style.height = `${height}px`
 
-      // Update camera aspect ratio
+      // Update Camera Aspect Ratio
       camera.aspect = width / height
       camera.updateProjectionMatrix()
+
+      // Update Vehicle Selection Camera Aspect Ratio
+      if (vehicleSelectionCamera) {
+        vehicleSelectionCamera.aspect = width / height
+        vehicleSelectionCamera.updateProjectionMatrix()
+      }
     }
 
     const onMountedHandler = () => {
@@ -820,11 +951,12 @@ export default defineComponent({
 
       if (gameContainer.value) {
         initScene()
+        initVehicleSelectionScene()
       }
       window.addEventListener('resize', handleResize)
       handleResize()
 
-      // Initialize speedometer context
+      // Initialize Speedometer Context
       const canvas = speedometerCanvas.value
       if (canvas) {
         speedometerContext = canvas.getContext('2d')
@@ -834,41 +966,41 @@ export default defineComponent({
     const resetGame = (isInitialSpawn = false) => {
       isGameOver.value = false
 
-      // Remove explosion sprite from scene
+      // Remove Explosion Sprite from Scene
       if (explosionSprite) {
         scene.remove(explosionSprite)
         explosionSprite = null
       }
       explosionStartTime = null
 
-      // Reset ambient light intensity to normal
+      // Reset Ambient Light Intensity to Normal
       ambientLight.intensity = 1
 
-      // Add the car back to the scene if not already there
+      // Add the Car Back to the Scene if Not Already There
       if (!scene.children.includes(car)) {
         scene.add(car)
       }
 
-      // Reset variables
+      // Reset Variables
       velocity = 0
       angularVelocity = 0
 
-      // If it's the initial spawn, position the car on the road at (0, y, 0)
+      // Initial Spawn Position
       if (isInitialSpawn) {
         car.position.set(0, car.position.y, 0)
       } else {
-        // Reset car's position to a new random position
+        // Reset Car's Position to a New Random Position
         const maxPosition = 10 * (60 + 15) // rows * blockSpacing
         const randomX = (Math.random() - 0.5) * maxPosition
         const randomZ = (Math.random() - 0.5) * maxPosition
         car.position.set(randomX, car.position.y, randomZ)
       }
 
-      // Reset car's rotation
+      // Reset Car's Rotation
       car.rotation.set(0, 0, 0)
     }
 
-    // Helper function to play background music
+    // Play Background Music
     const playBackgroundMusic = () => {
       if (!backgroundAudio) {
         backgroundAudio = new Audio('/assets/sounds/barseback.mp3')
@@ -880,13 +1012,23 @@ export default defineComponent({
       })
     }
 
-    // Function to start the game when "Play" is clicked
+    // Play Vehicle Selection Music
+    const playVehicleSelectionMusic = () => {
+      if (!vehicleSelectionMusic) {
+        vehicleSelectionMusic = new Audio('/assets/sounds/1080.mp3')
+        vehicleSelectionMusic.loop = true
+        vehicleSelectionMusic.volume = 0.7
+      }
+      vehicleSelectionMusic.play().catch((error) => {
+        console.error('Error playing vehicle selection music:', error)
+      })
+    }
+
+    // Start the Game When "Play" is Clicked
     const startGame = () => {
       showOverlay.value = false
-      // Spawn the player on the road
-      resetGame(true)
-      // Start background music
-      playBackgroundMusic()
+      showVehicleSelection.value = true
+      playVehicleSelectionMusic()
     }
 
     onMounted(onMountedHandler)
@@ -917,16 +1059,22 @@ export default defineComponent({
       }
       window.removeEventListener('resize', handleResize)
 
-      // Stop background music
+      // Stop Background Music
       if (backgroundAudio) {
         backgroundAudio.pause()
         backgroundAudio = null
       }
 
-      // Stop and cleanup explosion audio
+      // Stop and Cleanup Explosion Audio
       if (explosionAudio) {
         explosionAudio.pause()
         explosionAudio = null
+      }
+
+      // Stop and Cleanup Vehicle Selection Music
+      if (vehicleSelectionMusic) {
+        vehicleSelectionMusic.pause()
+        vehicleSelectionMusic = null
       }
     })
 
@@ -936,6 +1084,7 @@ export default defineComponent({
       isGameOver,
       showOverlay,
       startGame,
+      showVehicleSelection,
     }
   },
 })
@@ -973,7 +1122,7 @@ export default defineComponent({
   height: 100%;
 }
 
-/* Added styles for the overlay */
+/* Styles for the Initial Overlay */
 .overlay {
   position: absolute;
   top: 0;
@@ -998,5 +1147,40 @@ export default defineComponent({
   padding: 10px 20px;
   font-size: 24px;
   cursor: pointer;
+}
+
+/* Styles for the Vehicle Selection Overlay */
+.vehicle-selection-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: transparent; /* Or black with some transparency */
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  z-index: 10; /* Ensure it is on top */
+}
+
+.vehicle-stats {
+  position: absolute;
+  color: white;
+  text-align: center;
+  margin-top: 50vh;
+  font-size: 32px;
+  font-family: 'Press Start 2P', 'VT323', 'Pixelated MS Sans Serif', 'Monaco', monospace;
+  text-shadow:
+    6px 6px 0 #000,
+    -6px -6px 0 #000,
+    6px -6px 0 #000,
+    -6px 6px 0 #000,
+    0 6px 0 #000,
+    6px 0 0 #000,
+    0 -6px 0 #000,
+    -6px 0 0 #000;
+  -webkit-font-smoothing: none;
+  -moz-osx-font-smoothing: none;
 }
 </style>
