@@ -122,8 +122,8 @@ export default defineComponent({
         0.1,
         1000,
       )
-      vehicleSelectionCamera.position.set(7, 2, -2 )
-      vehicleSelectionCamera.lookAt(0, 0, 0)
+      vehicleSelectionCamera.position.set(7, 1, -2 )
+      vehicleSelectionCamera.lookAt(-1, 0, 0)
 
       // Set Background to Black
       vehicleSelectionScene.background = new THREE.TextureLoader().load('/assets/images/showroom.webp')
@@ -144,7 +144,7 @@ export default defineComponent({
           vehicleSelectionCar.position.set(0, -2.5, 0)
 
           // Rotate to Face Positive Z-axis
-          vehicleSelectionCar.rotation.y += Math.PI * 0.1
+          vehicleSelectionCar.rotation.y += Math.PI
 
           // Load Texture for the Car
           const textureLoader = new THREE.TextureLoader()
@@ -1150,8 +1150,9 @@ export default defineComponent({
 }
 
 /* Styles for the Vehicle Selection Overlay */
+/* Styles for the Vehicle Selection Overlay */
 .vehicle-selection-overlay {
-  position: absolute;
+  position: fixed;
   top: 0;
   left: 0;
   width: 100%;
@@ -1165,22 +1166,14 @@ export default defineComponent({
 }
 
 .vehicle-stats {
-  position: absolute;
+  position: fixed;
   color: white;
   text-align: center;
   margin-top: 55vh;
-  font-size: 30px;
+  font-size: 1.5vw;
   font-family: 'Press Start 2P', 'VT323', 'Pixelated MS Sans Serif', 'Monaco', monospace;
-  text-shadow:
-    6px 6px 0 #000,
-    -6px -6px 0 #000,
-    6px -6px 0 #000,
-    -6px 6px 0 #000,
-    0 6px 0 #000,
-    6px 0 0 #000,
-    0 -6px 0 #000,
-    -6px 0 0 #000;
   -webkit-font-smoothing: none;
   -moz-osx-font-smoothing: none;
 }
+
 </style>
