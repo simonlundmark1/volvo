@@ -1168,8 +1168,8 @@ export default defineComponent({
   position: absolute;
   color: white;
   text-align: center;
-  margin-top: 50vh;
-  font-size: 32px;
+  margin-top: 52vh;
+  font-size: 30px;
   font-family: 'Press Start 2P', 'VT323', 'Pixelated MS Sans Serif', 'Monaco', monospace;
   text-shadow:
     6px 6px 0 #000,
