@@ -367,17 +367,18 @@ function __VLS_template() {
     };
     let __VLS_directives;
     let __VLS_styleScopedClasses;
-    // CSS variable injection 
-    // CSS variable injection end 
+    // CSS variable injection
+    // CSS variable injection end
     let __VLS_resolvedLocalAndGlobalComponents;
     __VLS_elementAsFunction(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({ ...{ class: ("game-container") }, ref: ("gameContainer"), });
-    // @ts-ignore navigation for `const gameContainer = ref()`
+    // @ts-expect-error navigation for `const gameContainer = ref()`
     __VLS_ctx.gameContainer;
     __VLS_styleScopedClasses['game-container'];
     var __VLS_slots;
     var __VLS_inheritedAttrs;
     const __VLS_refs = {
         "gameContainer": __VLS_nativeElements['div'],
+    };
     };
     var $refs;
     var $el;
