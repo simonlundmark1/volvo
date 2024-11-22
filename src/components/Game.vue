@@ -141,7 +141,7 @@ export default defineComponent({
 
           // Set Scale and Position
           vehicleSelectionCar.scale.set(0.01, 0.01, 0.01)
-          vehicleSelectionCar.position.set(0, -2, 0)
+          vehicleSelectionCar.position.set(0, -2.5, 0)
 
           // Rotate to Face Positive Z-axis
           vehicleSelectionCar.rotation.y += Math.PI * 0.1
@@ -1168,7 +1168,7 @@ export default defineComponent({
   position: absolute;
   color: white;
   text-align: center;
-  margin-top: 52vh;
+  margin-top: 55vh;
   font-size: 30px;
   font-family: 'Press Start 2P', 'VT323', 'Pixelated MS Sans Serif', 'Monaco', monospace;
   text-shadow:
