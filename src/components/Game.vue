@@ -404,7 +404,7 @@ export default defineComponent({
       // Load the equirectangular texture for background
       const textureLoader2 = new THREE.TextureLoader()
       textureLoader2.load(
-        '/assets/images/5.png',
+        '/assets/images/6.png',
         (texture) => {
           texture.mapping = THREE.EquirectangularReflectionMapping
           scene.background = texture
