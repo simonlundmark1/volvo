@@ -59,6 +59,7 @@ import {
 import * as THREE from 'three';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader';
 import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { PMREMGenerator } from 'three'; // Import PMREMGenerator
 
 export default defineComponent({
   name: 'GameComponent',
@@ -114,16 +115,35 @@ export default defineComponent({
     // Current Tilt Angle of the Car
     let currentTiltAngle = 0;
 
-    // Renderer Dimensions for Performance
+    // Constants for Renderer Dimensions and Grid
     const RENDERER_WIDTH = 480;
     const RENDERER_HEIGHT = 360;
+    const rows = 10;
+    const columns = 10;
+    const blockSize = 60;
+    const blockSpacing = blockSize + 15; // 15 is the road width
+    const roadHeight = 0.02;
 
     // Data for Houses and Trees
     const houseData: Array<{
       position: THREE.Vector3;
-      size: { width: number; height: number; depth: number };
+      boundingBox: THREE.Box3;
     }> = [];
-    const treeData: Array<{ position: THREE.Vector3; scale: number }> = [];
+    const treeData: Array<{
+      position: THREE.Vector3;
+      scale: number;
+      boundingSphere: THREE.Sphere;
+    }> = [];
+
+    // Data for Pyramids and Collectibles Bounding Boxes
+    const pyramidData: Array<{
+      mesh: THREE.Mesh;
+      boundingBox: THREE.Box3;
+    }> = [];
+    const collectibleData: Array<{
+      mesh: THREE.Mesh;
+      boundingBox: THREE.Box3;
+    }> = [];
 
     // Ambient Light Reference
     let ambientLight: THREE.AmbientLight;
@@ -401,7 +421,17 @@ export default defineComponent({
       const pineTreeGeometry = createPineTreeGeometry();
       const treeMaterial = new THREE.MeshBasicMaterial({ vertexColors: true });
 
+      // Create House Geometry with Roof
       const houseGeometry = new THREE.BoxGeometry(10, 20, 10);
+      const roofGeometry = new THREE.PlaneGeometry(10, 10);
+      roofGeometry.rotateX(-Math.PI / 2);
+      roofGeometry.translate(0, 10, 0); // Place on top of the house
+
+      const combinedHouseGeometry = BufferGeometryUtils.mergeGeometries(
+        [houseGeometry, roofGeometry],
+        false
+      );
+
       const houseMaterial = new THREE.MeshBasicMaterial({
         map: houseTexture,
       });
@@ -419,7 +449,7 @@ export default defineComponent({
 
       // Create InstancedMeshes
       const houseInstancedMesh = new THREE.InstancedMesh(
-        houseGeometry,
+        combinedHouseGeometry,
         houseMaterial,
         totalHouses
       );
@@ -473,10 +503,18 @@ export default defineComponent({
             houseInstancedMesh.setMatrixAt(houseIndex, dummy.matrix);
             houseIndex++;
 
+            // Create the transformed bounding box for this instance
+            const originalBoundingBox = new THREE.Box3().setFromBufferAttribute(
+              combinedHouseGeometry.attributes.position
+            );
+            const transformedBoundingBox = originalBoundingBox
+              .clone()
+              .applyMatrix4(dummy.matrix);
+
             // Store House Data for Collision Detection
             houseData.push({
-              position: new THREE.Vector3(houseX, height / 2, houseZ),
-              size: { width: width / 10, height: height / 20, depth: depth / 10 },
+              position: dummy.position.clone(),
+              boundingBox: transformedBoundingBox,
             });
 
             blockHousePositions.push({
@@ -540,16 +578,31 @@ export default defineComponent({
               // Position trees slightly below ground level to fix floating
               dummy.position.set(treeX, -0.2, treeZ); // Lowered Y position to -0.2
               dummy.scale.set(treeScale, treeScale, treeScale);
-              dummy.rotation.set(randomTiltX, Math.random() * Math.PI * 2, randomTiltZ);
+              dummy.rotation.set(
+                randomTiltX,
+                Math.random() * Math.PI * 2,
+                randomTiltZ
+              );
               dummy.updateMatrix();
 
               treeInstancedMesh.setMatrixAt(treeIndex, dummy.matrix);
               treeIndex++;
 
               // Store Tree Data for Collision Detection
+              const treePosition = new THREE.Vector3(treeX, -0.2, treeZ);
+              const boundingSphere = new THREE.Sphere(
+                new THREE.Vector3(
+                  treeX,
+                  -0.2 + treeScale * 9,
+                  treeZ
+                ), // approximate center
+                treeScale * 7 // approximate radius
+              );
+
               treeData.push({
-                position: new THREE.Vector3(treeX, -0.2, treeZ), // Updated Y position here too
+                position: treePosition,
                 scale: treeScale,
+                boundingSphere: boundingSphere,
               });
 
               placedTrees++;
@@ -565,6 +618,9 @@ export default defineComponent({
 
       // Generate Collectibles
       generateCollectibles();
+
+      // Add Pyramids Along the Roads and Roofs
+      generatePyramids();
 
       // Load OBJ Model as Car
       const objLoaderMain = new OBJLoader();
@@ -628,8 +684,18 @@ export default defineComponent({
       textureLoader2.load(
         '/assets/images/6.png',
         (texture) => {
-          texture.mapping = THREE.EquirectangularReflectionMapping;
-          scene.background = texture;
+          // Use PMREMGenerator to process the texture
+          const pmremGenerator = new PMREMGenerator(renderer);
+          pmremGenerator.compileEquirectangularShader();
+
+          const envMap = pmremGenerator.fromEquirectangular(texture).texture;
+
+          scene.background = envMap;
+
+          // Dispose of the original texture and PMREMGenerator to free up memory
+          texture.dispose();
+          pmremGenerator.dispose();
+
           // Add Warm Color Overlay to Sky
           scene.fog = new THREE.FogExp2(0xffd4a3, 0.002);
         },
@@ -664,17 +730,28 @@ export default defineComponent({
     const highScores = ref<{ name: string; score: number }[]>([]); // High score list
     const playerName = ref(''); // Player's name input
 
+    // Variables for Pyramids
+    let pyramids: THREE.Mesh[] = []; // Array to hold pyramids
+
     // Function to Generate Collectibles
     const generateCollectibles = () => {
       // Create a sphere geometry for the collectibles
       const collectibleGeometry = new THREE.SphereGeometry(1, 16, 16);
-      const collectibleMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 }); // Red color
+      const collectibleMaterial = new THREE.MeshBasicMaterial({
+        color: 0xff0000,
+      }); // Red color
 
-      // For simplicity, we can create 30 collectibles
-      const numCollectibles = 30;
+      // Increase the number of collectibles
+      const numCollectibles = 50;
+      const numCollectiblesOnRoofs = 30; // Increased number of collectibles on roofs
+      const numCollectiblesOnRoads = numCollectibles - numCollectiblesOnRoofs;
 
-      for (let i = 0; i < numCollectibles; i++) {
-        const collectible = new THREE.Mesh(collectibleGeometry, collectibleMaterial);
+      // Place collectibles on roads
+      for (let i = 0; i < numCollectiblesOnRoads; i++) {
+        const collectible = new THREE.Mesh(
+          collectibleGeometry,
+          collectibleMaterial
+        );
 
         // Randomly place the collectible on a road segment
         // First, choose a random row and column
@@ -699,16 +776,157 @@ export default defineComponent({
           );
         } else {
           // Vertical road
-          collectible.position.set(
-            roadX,
-            1,
-            roadZ + offsetZ
-          );
+          collectible.position.set(roadX, 1, roadZ + offsetZ);
         }
 
         // Add to the scene and to the collectibles array
         scene.add(collectible);
         collectibles.push(collectible);
+
+        // Store Bounding Box for Collision Detection
+        const boundingBox = new THREE.Box3().setFromObject(collectible);
+        collectibleData.push({ mesh: collectible, boundingBox });
+      }
+
+      // Place collectibles on roofs
+      for (let i = 0; i < numCollectiblesOnRoofs; i++) {
+        const collectible = new THREE.Mesh(
+          collectibleGeometry,
+          collectibleMaterial
+        );
+
+        // Randomly select a house
+        const randomHouseIndex = Math.floor(Math.random() * houseData.length);
+        const house = houseData[randomHouseIndex];
+        const houseBoundingBox = house.boundingBox;
+
+        // Randomly position on the roof
+        const roofMinX = houseBoundingBox.min.x + 1;
+        const roofMaxX = houseBoundingBox.max.x - 1;
+        const roofMinZ = houseBoundingBox.min.z + 1;
+        const roofMaxZ = houseBoundingBox.max.z - 1;
+        const collectibleX = THREE.MathUtils.lerp(
+          roofMinX,
+          roofMaxX,
+          Math.random()
+        );
+        const collectibleZ = THREE.MathUtils.lerp(
+          roofMinZ,
+          roofMaxZ,
+          Math.random()
+        );
+        const roofY = houseBoundingBox.max.y + 1; // Slightly above the roof
+
+        collectible.position.set(collectibleX, roofY, collectibleZ);
+
+        // Add to the scene and to the collectibles array
+        scene.add(collectible);
+        collectibles.push(collectible);
+
+        // Store Bounding Box for Collision Detection
+        const boundingBox = new THREE.Box3().setFromObject(collectible);
+        collectibleData.push({ mesh: collectible, boundingBox });
+      }
+    };
+
+    // Function to Generate Pyramids
+    const generatePyramids = () => {
+      const pyramidGeometry = new THREE.ConeGeometry(2, 1, 8);
+      const pyramidMaterial = new THREE.MeshBasicMaterial({
+        color: 0xffa500,
+      }); // Orange color
+
+      // Increase the number of pyramids
+      const numPyramids = 150; // Adjusted total number
+      const numPyramidsOnRoofs = 80; // Increased number on roofs
+      const numPyramidsOnRoads = numPyramids - numPyramidsOnRoofs;
+
+      // Place pyramids on roads
+      for (let i = 0; i < numPyramidsOnRoads; i++) {
+        const pyramid = new THREE.Mesh(pyramidGeometry, pyramidMaterial);
+
+        // Randomly choose a road segment
+        const randomRow = Math.floor(Math.random() * (10 + 1));
+        const randomCol = Math.floor(Math.random() * (10 + 1));
+        const isHorizontal = Math.random() < 0.5;
+
+        // Calculate the position
+        let posX, posZ;
+        if (isHorizontal) {
+          // Horizontal road
+          posX = (columns * blockSpacing) / 2 - blockSpacing / 2;
+          posX += (Math.random() - 0.5) * (columns * blockSpacing);
+          posZ = randomRow * blockSpacing - blockSpacing / 2;
+          posX = THREE.MathUtils.clamp(
+            posX,
+            0,
+            columns * blockSpacing - blockSpacing
+          );
+        } else {
+          // Vertical road
+          posX = randomCol * blockSpacing - blockSpacing / 2;
+          posZ = (rows * blockSpacing) / 2 - blockSpacing / 2;
+          posZ += (Math.random() - 0.5) * (rows * blockSpacing);
+          posZ = THREE.MathUtils.clamp(
+            posZ,
+            0,
+            rows * blockSpacing - blockSpacing
+          );
+        }
+
+        // Adjust Y position to be on top of the road
+        pyramid.position.set(
+          posX,
+          roadHeight + pyramidGeometry.parameters.height / 2,
+          posZ
+        );
+
+        scene.add(pyramid);
+        pyramids.push(pyramid);
+
+        // Store Bounding Box for Collision Detection
+        const boundingBox = new THREE.Box3().setFromObject(pyramid);
+        pyramidData.push({ mesh: pyramid, boundingBox });
+      }
+
+      // Place pyramids on roofs
+      for (let i = 0; i < numPyramidsOnRoofs; i++) {
+        const pyramid = new THREE.Mesh(pyramidGeometry, pyramidMaterial);
+
+        // Randomly select a house
+        const randomHouseIndex = Math.floor(Math.random() * houseData.length);
+        const house = houseData[randomHouseIndex];
+        const houseBoundingBox = house.boundingBox;
+
+        // Randomly position on the roof
+        const roofMinX = houseBoundingBox.min.x + 1;
+        const roofMaxX = houseBoundingBox.max.x - 1;
+        const roofMinZ = houseBoundingBox.min.z + 1;
+        const roofMaxZ = houseBoundingBox.max.z - 1;
+        const pyramidX = THREE.MathUtils.lerp(
+          roofMinX,
+          roofMaxX,
+          Math.random()
+        );
+        const pyramidZ = THREE.MathUtils.lerp(
+          roofMinZ,
+          roofMaxZ,
+          Math.random()
+        );
+        const roofY =
+          houseBoundingBox.max.y + pyramidGeometry.parameters.height / 2;
+
+        pyramid.position.set(pyramidX, roofY, pyramidZ);
+
+        // Increase the size of pyramids on roofs for visibility
+        pyramid.scale.set(1.5, 1.5, 1.5);
+
+        scene.add(pyramid);
+        pyramids.push(pyramid);
+
+        // Store Bounding Box for Collision Detection
+        const boundingBox = new THREE.Box3().setFromObject(pyramid);
+        pyramidData.push({ mesh: pyramid, boundingBox });
       }
     };
 
@@ -771,7 +989,46 @@ export default defineComponent({
       return combinedGeometry;
     };
 
+    // Variables for Car Jumping Mechanics
+    let verticalVelocity = 0;
+    const gravity = -30; // Increase gravity for a snappier jump
+
+    const makeCarJump = () => {
+      if (verticalVelocity === 0) {
+        verticalVelocity = 35; // Adjust the jump strength as needed
+      }
+    };
+
     let prevTime = performance.now();
+
+    // Variables for Car Collision and Movement
+    let carBoundingBox = new THREE.Box3();
+    const carWidth = 2;
+    const carHeight = 1;
+    const carDepth = 4;
+
+    // Variables for Ground and Roof Detection
+    let onGround = true;
+
+    const getGroundHeightAtPosition = (x: number, z: number): number => {
+      let maxY = -1.65; // Ground level
+      const point = new THREE.Vector3(x, 0, z);
+
+      // Check if the car is over any house
+      for (let i = 0; i < houseData.length; i++) {
+        const house = houseData[i];
+        const houseBoundingBox = house.boundingBox;
+
+        if (houseBoundingBox.containsPoint(point)) {
+          // Car is over this house
+          const roofY = houseBoundingBox.max.y;
+          if (roofY > maxY) {
+            maxY = roofY;
+          }
+        }
+      }
+      return maxY;
+    };
 
     const animate = (time: number) => {
       const deltaTime = time - prevTime; // Time in milliseconds
@@ -787,7 +1044,14 @@ export default defineComponent({
         renderer.render(vehicleSelectionScene, vehicleSelectionCamera);
       } else {
         // Game Running or Game Over
-        if (modelLoaded && car && !isGameOver.value && !showOverlay.value && !showHighScoreInput.value && !showHighScoreList.value) {
+        if (
+          modelLoaded &&
+          car &&
+          !isGameOver.value &&
+          !showOverlay.value &&
+          !showHighScoreInput.value &&
+          !showHighScoreList.value
+        ) {
           // Main Game Logic (movement, controls, etc.)
 
           // Calculate Dynamic Acceleration Based on Current Speed
@@ -909,58 +1173,115 @@ export default defineComponent({
 
           // Create a Look-at Point in Front of and Above the Car
           const lookAtOffset = new THREE.Vector3(0, 2, 10);
-          lookAtOffset.applyAxisAngle(new THREE.Vector3(0, 1, 0), car.rotation.y);
+          lookAtOffset.applyAxisAngle(
+            new THREE.Vector3(0, 1, 0),
+            car.rotation.y
+          );
           const lookAtPoint = car.position.clone().add(lookAtOffset);
 
           // Make the Camera Look at This Point
           camera.lookAt(lookAtPoint);
           camera.position.y = THREE.MathUtils.clamp(camera.position.y, 1, 20);
 
-          // Collision Detection with Houses
+          // Update Car's Bounding Box
+          carBoundingBox.setFromObject(car);
+
           const carPosition = car.position.clone();
+
+          // Collision Detection with Houses
+          let collidedWithSideOfHouse = false;
 
           for (let i = 0; i < houseData.length; i++) {
             const house = houseData[i];
-            const dx = carPosition.x - house.position.x;
-            const dz = carPosition.z - house.position.z;
-            const distance = Math.sqrt(dx * dx + dz * dz);
-            const collisionDistance = 5; // Adjust as necessary
+            const houseBoundingBox = house.boundingBox;
 
-            if (distance < collisionDistance) {
-              // Collision Detected
-              handleCollision();
-              break;
+            if (carBoundingBox.intersectsBox(houseBoundingBox)) {
+              // Check if the collision is with the sides or the top
+              const carBottomY = carBoundingBox.min.y;
+              const carTopY = carBoundingBox.max.y;
+              const houseBottomY = houseBoundingBox.min.y;
+              const houseTopY = houseBoundingBox.max.y;
+
+              if (carBottomY >= houseTopY - 0.1) {
+                // Car is above the house, landing on the roof
+                // Ground height will handle adjusting the car's position
+                continue;
+              } else if (carTopY <= houseBottomY + 0.1) {
+                // Car is below the house, ignore
+                continue;
+              } else {
+                // Collision with the sides, cause explosion
+                collidedWithSideOfHouse = true;
+                break;
+              }
             }
+          }
+
+          if (collidedWithSideOfHouse) {
+            handleCollision();
           }
 
           // Collision Detection with Trees
           for (let i = 0; i < treeData.length; i++) {
             const tree = treeData[i];
-            const dx = carPosition.x - tree.position.x;
-            const dz = carPosition.z - tree.position.z;
-            const distance = Math.sqrt(dx * dx + dz * dz);
-            const collisionDistance = 3; // Adjust as necessary
+            const treeBoundingSphere = tree.boundingSphere;
 
-            if (distance < collisionDistance) {
-              handleCollision();
-              break;
+            if (carBoundingBox.intersectsSphere(treeBoundingSphere)) {
+              // Check the vertical position
+              const carBottomY = carBoundingBox.min.y;
+              const carTopY = carBoundingBox.max.y;
+              const treeTopY =
+                treeBoundingSphere.center.y + treeBoundingSphere.radius;
+
+              if (carBottomY >= treeTopY - 0.1) {
+                // Car is above the tree, passes over it
+                continue;
+              } else {
+                // Collision with the tree
+                handleCollision();
+                break;
+              }
             }
           }
 
           // Collision Detection with Collectibles
-          for (let i = collectibles.length - 1; i >= 0; i--) {
-            const collectible = collectibles[i];
-            const dx = car.position.x - collectible.position.x;
-            const dz = car.position.z - collectible.position.z;
-            const distance = Math.sqrt(dx * dx + dz * dz);
-            const collisionDistance = 2; // Adjust as necessary
-
-            if (distance < collisionDistance) {
+          for (let i = collectibleData.length - 1; i >= 0; i--) {
+            const collectibleInfo = collectibleData[i];
+            if (carBoundingBox.intersectsBox(collectibleInfo.boundingBox)) {
               // Collectible collected
-              scene.remove(collectible);
+              scene.remove(collectibleInfo.mesh);
               collectibles.splice(i, 1);
+              collectibleData.splice(i, 1);
               score.value += 1;
             }
+          }
+
+          // Collision Detection with Pyramids
+          for (let i = 0; i < pyramidData.length; i++) {
+            const pyramidInfo = pyramidData[i];
+            if (carBoundingBox.intersectsBox(pyramidInfo.boundingBox)) {
+              // Collision with pyramid detected
+              makeCarJump();
+              break;
+            }
+          }
+
+          // Apply gravity and vertical movement
+          verticalVelocity += gravity * (deltaTime / 1000);
+          car.position.y += verticalVelocity * (deltaTime / 1000);
+
+          // Determine the ground height at the car's current position
+          const groundY = getGroundHeightAtPosition(
+            car.position.x,
+            car.position.z
+          );
+
+          if (car.position.y - carHeight / 2 < groundY) {
+            car.position.y = groundY + carHeight / 2;
+            verticalVelocity = 0;
+            onGround = true;
+          } else {
+            onGround = false;
           }
 
           // Update Timer
@@ -976,7 +1297,11 @@ export default defineComponent({
         }
 
         // Update Explosion Animation
-        if (isGameOver.value && explosionSprite && explosionStartTime !== null) {
+        if (
+          isGameOver.value &&
+          explosionSprite &&
+          explosionStartTime !== null
+        ) {
           const elapsed = time - explosionStartTime;
           const frame = Math.floor(
             (elapsed / explosionDuration) * totalExplosionFrames
@@ -1006,7 +1331,7 @@ export default defineComponent({
       // Play Explosion Sound
       if (!explosionAudio) {
         explosionAudio = new Audio('/assets/sounds/boom.mp3');
-        explosionAudio.volume = 0.5;
+        explosionAudio.volume = 1;
       }
       explosionAudio.currentTime = 0; // Reset audio to start
       explosionAudio.play().catch((error) => {
@@ -1101,7 +1426,8 @@ export default defineComponent({
       }
 
       // Draw the Needle
-      const needleAngle = startAngle + (speed / maxSpeed) * (endAngle - startAngle);
+      const needleAngle =
+        startAngle + (speed / maxSpeed) * (endAngle - startAngle);
       const needleLength = width / 2 - 40;
       const needleX = width / 2 + needleLength * Math.cos(needleAngle);
       const needleY = height / 2 + needleLength * Math.sin(needleAngle);
@@ -1128,7 +1454,7 @@ export default defineComponent({
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (showVehicleSelection.value) {
-        if (event.key === 'Enter') {
+        if (event.key === 'Enter' && car) {
           event.preventDefault();
           // Start the Game
           showVehicleSelection.value = false;
@@ -1213,6 +1539,8 @@ export default defineComponent({
     );
 
     const resetGame = (isInitialSpawn = false) => {
+      if (!car) return;
+
       isGameOver.value = false;
       isTimeUp.value = false;
 
@@ -1234,13 +1562,15 @@ export default defineComponent({
       // Reset Variables
       velocity = 0;
       angularVelocity = 0;
+      verticalVelocity = 0;
+      car.position.y = -1.65; // Reset to ground level
 
       // Initial Spawn Position
       if (isInitialSpawn) {
         car.position.set(0, car.position.y, 0);
       } else {
         // Reset Car's Position to a New Random Position
-        const maxPosition = 10 * (60 + 15); // rows * blockSpacing
+        const maxPosition = rows * blockSpacing; // Use rows instead of 10
         const randomX = (Math.random() - 0.5) * maxPosition;
         const randomZ = (Math.random() - 0.5) * maxPosition;
         car.position.set(randomX, car.position.y, randomZ);
@@ -1257,10 +1587,6 @@ export default defineComponent({
       // Stop the car's movement
       velocity = 0;
       angularVelocity = 0;
-      // Pause background music
-      if (backgroundAudio) {
-        backgroundAudio.pause();
-      }
     };
 
     // Function to Submit High Score
@@ -1272,7 +1598,9 @@ export default defineComponent({
       };
 
       // Load existing high scores from localStorage
-      const existingScores = JSON.parse(localStorage.getItem('highScores') || '[]');
+      const existingScores = JSON.parse(
+        localStorage.getItem('highScores') || '[]'
+      );
 
       // Add the new score
       existingScores.push(newScore);
@@ -1310,15 +1638,16 @@ export default defineComponent({
         scene.remove(collectible);
       });
       collectibles = [];
-      // Generate new collectibles
+      collectibleData.splice(0, collectibleData.length);
+      // Remove existing pyramids from the scene
+      pyramids.forEach((pyramid) => {
+        scene.remove(pyramid);
+      });
+      pyramids = [];
+      pyramidData.splice(0, pyramidData.length);
+      // Generate new collectibles and pyramids
       generateCollectibles();
-      // Restart background music
-      if (backgroundAudio) {
-        backgroundAudio.currentTime = 0;
-        backgroundAudio.play().catch((error) => {
-          console.error('Error playing background music:', error);
-        });
-      }
+      generatePyramids();
     };
 
     // Play Background Music
