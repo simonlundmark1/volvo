@@ -24,6 +24,14 @@
     <div class="timer">{{ Math.ceil(timeRemaining) }}</div>
     <div class="score">Score: {{ score }}</div>
   </div>
+  <!-- Radio Interface -->
+  <div v-if="!showOverlay && !showVehicleSelection && !showHighScoreInput && !showHighScoreList" class="radio-interface">
+    <div class="radio-display">
+      <div class="radio-text">{{ currentChannel === 'local' ? 'BARSEBACK FM' : 'GÄLLIVARE NÄRRADIO 97,7' }}</div>
+      <div class="radio-frequency">{{ currentChannel === 'local' ? '98.7 MHz' : '97.7 MHz' }}</div>
+    </div>
+    <button class="radio-button" @click="toggleRadioChannel">TUNE</button>
+  </div>
   <!-- High Score Input Screen -->
   <div v-if="showHighScoreInput" class="high-score-input">
     <div class="high-score-content">
@@ -1725,6 +1733,39 @@ export default defineComponent({
       playVehicleSelectionMusic();
     };
 
+    // Add these with your other refs at the top
+    const currentChannel = ref('local');
+    let onlineRadio: HTMLAudioElement | null = null;
+
+    // Add this new function
+    const toggleRadioChannel = () => {
+      if (currentChannel.value === 'local') {
+        // Switch to online radio
+        if (!onlineRadio) {
+          onlineRadio = new Audio('https://stream.radiogellivare.se/listen/977mhz/radio.mp3');
+          onlineRadio.volume = 0.8;
+        }
+        if (backgroundAudio) {
+          backgroundAudio.pause();
+        }
+        onlineRadio.play().catch(error => {
+          console.error('Error playing online radio:', error);
+        });
+        currentChannel.value = 'online';
+      } else {
+        // Switch to local music
+        if (onlineRadio) {
+          onlineRadio.pause();
+        }
+        if (backgroundAudio) {
+          backgroundAudio.play().catch(error => {
+            console.error('Error playing background music:', error);
+          });
+        }
+        currentChannel.value = 'local';
+      }
+    };
+
     onMounted(onMountedHandler);
 
     onBeforeUnmount(() => {
@@ -1770,6 +1811,12 @@ export default defineComponent({
         vehicleSelectionMusic.pause();
         vehicleSelectionMusic = null;
       }
+
+      // Add this to cleanup the online radio
+      if (onlineRadio) {
+        onlineRadio.pause();
+        onlineRadio = null;
+      }
     });
 
     return {
@@ -1787,6 +1834,8 @@ export default defineComponent({
       showHighScoreList,
       submitHighScore,
       restartGame,
+      currentChannel,
+      toggleRadioChannel,
     };
   },
 });
@@ -1954,5 +2003,48 @@ export default defineComponent({
 .high-score-content li {
   margin: 5px 0;
   font-size: 18px;
+}
+
+.radio-interface {
+  position: absolute;
+  bottom: 5%;
+  left: 5%;
+  background: rgba(0, 0, 0, 0.8);
+  border: 2px solid #444;
+  border-radius: 5px;
+  padding: 10px;
+  color: #0f0;
+  font-family: 'Press Start 2P', monospace;
+  z-index: 10;
+}
+
+.radio-display {
+  background: #111;
+  padding: 8px;
+  margin-bottom: 8px;
+  border: 1px solid #333;
+}
+
+.radio-text {
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+.radio-frequency {
+  font-size: 14px;
+}
+
+.radio-button {
+  background: #333;
+  color: #0f0;
+  border: 1px solid #444;
+  padding: 5px 10px;
+  font-family: 'Press Start 2P', monospace;
+  cursor: pointer;
+  width: 100%;
+}
+
+.radio-button:hover {
+  background: #444;
 }
 </style>
