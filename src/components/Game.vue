@@ -59,7 +59,7 @@ import {
 import * as THREE from 'three';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader';
 import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { PMREMGenerator } from 'three'; // Import PMREMGenerator
+import { PMREMGenerator } from 'three';
 
 export default defineComponent({
   name: 'GameComponent',
@@ -121,7 +121,8 @@ export default defineComponent({
     const rows = 10;
     const columns = 10;
     const blockSize = 60;
-    const blockSpacing = blockSize + 15; // 15 is the road width
+    const roadWidth = 15;
+    const blockSpacing = blockSize + roadWidth;
     const roadHeight = 0.02;
 
     // Data for Houses and Trees
@@ -154,10 +155,10 @@ export default defineComponent({
 
     // Explosion Texture and Animation Parameters
     let explosionTexture: THREE.Texture;
-    const explosionRows = 4; // Number of rows in the sprite sheet
-    const explosionCols = 4; // Number of columns in the sprite sheet
+    const explosionRows = 4;
+    const explosionCols = 4;
     const totalExplosionFrames = explosionRows * explosionCols;
-    const explosionDuration = 1000; // Duration of the explosion animation in milliseconds
+    const explosionDuration = 1000;
 
     // Explosion Audio
     let explosionAudio: HTMLAudioElement | null = null;
@@ -169,7 +170,7 @@ export default defineComponent({
 
       // Initialize Camera
       vehicleSelectionCamera = new THREE.PerspectiveCamera(
-        90, // Field of View
+        90,
         RENDERER_WIDTH / RENDERER_HEIGHT,
         0.1,
         1000
@@ -252,7 +253,7 @@ export default defineComponent({
       // Initialize Camera
       camera = markRaw(
         new THREE.PerspectiveCamera(
-          75, // Field of View
+          75,
           RENDERER_WIDTH / RENDERER_HEIGHT,
           0.1,
           10000
@@ -264,15 +265,15 @@ export default defineComponent({
       // Initialize Renderer
       renderer = markRaw(
         new THREE.WebGLRenderer({
-          antialias: false, // Disable anti-aliasing for pixelated look
+          antialias: false,
           powerPreference: 'high-performance',
           stencil: false,
           depth: true,
         })
       );
-      renderer.setPixelRatio(1); // Ensure pixel ratio is 1
+      renderer.setPixelRatio(1);
       renderer.setSize(RENDERER_WIDTH, RENDERER_HEIGHT);
-      renderer.shadowMap.enabled = false; // Disable shadows for performance
+      renderer.shadowMap.enabled = false;
 
       // Append Renderer to the DOM
       if (gameContainer.value) {
@@ -282,11 +283,11 @@ export default defineComponent({
       }
 
       // Add Ambient Light with Warmer Color
-      ambientLight = new THREE.AmbientLight(0xffd4a3, 1); // Warm orange
+      ambientLight = new THREE.AmbientLight(0xffd4a3, 1);
       scene.add(ambientLight);
 
       // Add Directional Light for Warm Highlights
-      const directionalLight = new THREE.DirectionalLight(0xff9933, 0.5); // Warm orange light
+      const directionalLight = new THREE.DirectionalLight(0xff9933, 0.5);
       directionalLight.position.set(1, 1, 0);
       scene.add(directionalLight);
 
@@ -399,11 +400,11 @@ export default defineComponent({
 
       // Load House Texture
       const houseTexture = textureLoader.load(
-        '/assets/textures/house.jpg', // Path to your house texture
+        '/assets/textures/house.jpg',
         (texture) => {
           texture.wrapS = THREE.RepeatWrapping;
           texture.wrapT = THREE.RepeatWrapping;
-          texture.repeat.set(2, 2); // Adjust repeat for tiling effect
+          texture.repeat.set(2, 2);
           texture.encoding = THREE.sRGBEncoding;
           texture.minFilter = THREE.LinearMipMapNearestFilter;
           texture.magFilter = THREE.LinearFilter;
@@ -425,7 +426,7 @@ export default defineComponent({
       const houseGeometry = new THREE.BoxGeometry(10, 20, 10);
       const roofGeometry = new THREE.PlaneGeometry(10, 10);
       roofGeometry.rotateX(-Math.PI / 2);
-      roofGeometry.translate(0, 10, 0); // Place on top of the house
+      roofGeometry.translate(0, 10, 0);
 
       const combinedHouseGeometry = BufferGeometryUtils.mergeGeometries(
         [houseGeometry, roofGeometry],
@@ -443,7 +444,7 @@ export default defineComponent({
       for (let row = 0; row < rows; row++) {
         for (let col = 0; col < columns; col++) {
           totalHouses += Math.floor(Math.random() * 3) + 1;
-          totalTrees += Math.floor(Math.random() * 15) + 20; // 20-34 trees per block
+          totalTrees += Math.floor(Math.random() * 15) + 20;
         }
       }
 
@@ -525,13 +526,13 @@ export default defineComponent({
           }
 
           // Add Trees with Variable Count and Better Placement
-          const treesInBlock = Math.floor(Math.random() * 15) + 20; // 20-34 trees per block
+          const treesInBlock = Math.floor(Math.random() * 15) + 20;
           let attempts = 0;
           let placedTrees = 0;
 
           while (placedTrees < treesInBlock && attempts < 50) {
             // Randomize Tree Position Within the Block
-            const buffer = roadWidth / 2 + 3; // Reduced buffer to allow even closer placement to roads
+            const buffer = roadWidth / 2 + 3;
             const treeOffsetX =
               (Math.random() - 0.5) * (blockSize - roadWidth - buffer * 2);
             const treeOffsetZ =
@@ -547,7 +548,6 @@ export default defineComponent({
               const dz = treeZ - house.z;
               const distance = Math.sqrt(dx * dx + dz * dz);
               if (distance < house.radius + 2) {
-                // Even smaller minimum distance from houses
                 tooClose = true;
                 break;
               }
@@ -560,7 +560,6 @@ export default defineComponent({
               const dz = treeZ - otherTree.position.z;
               const distance = Math.sqrt(dx * dx + dz * dz);
               if (distance < 1.5) {
-                // Reduced minimum distance between trees
                 tooClose = true;
                 break;
               }
@@ -568,7 +567,7 @@ export default defineComponent({
 
             if (!tooClose) {
               // Even more varied scale with smaller average size
-              const treeScale = 0.4 + Math.random() * 0.3; // Scale between 0.4 and 0.7
+              const treeScale = 0.4 + Math.random() * 0.3;
 
               // Random slight tilt for more natural look
               const maxTilt = 0.1;
@@ -576,7 +575,7 @@ export default defineComponent({
               const randomTiltZ = (Math.random() - 0.5) * maxTilt;
 
               // Position trees slightly below ground level to fix floating
-              dummy.position.set(treeX, -0.2, treeZ); // Lowered Y position to -0.2
+              dummy.position.set(treeX, -0.2, treeZ);
               dummy.scale.set(treeScale, treeScale, treeScale);
               dummy.rotation.set(
                 randomTiltX,
@@ -595,8 +594,8 @@ export default defineComponent({
                   treeX,
                   -0.2 + treeScale * 9,
                   treeZ
-                ), // approximate center
-                treeScale * 7 // approximate radius
+                ),
+                treeScale * 7
               );
 
               treeData.push({
@@ -721,17 +720,17 @@ export default defineComponent({
     };
 
     // Variables for the Collectibles
-    const timeRemaining = ref(60); // Timer starts at 60 seconds
-    const score = ref(0); // Player's score
-    let collectibles: THREE.Mesh[] = []; // Array to hold the collectibles
-    const isTimeUp = ref(false); // Indicates if the time is up
-    const showHighScoreInput = ref(false); // Show high score input screen
-    const showHighScoreList = ref(false); // Show high score list screen
-    const highScores = ref<{ name: string; score: number }[]>([]); // High score list
-    const playerName = ref(''); // Player's name input
+    const timeRemaining = ref(60);
+    const score = ref(0);
+    let collectibles: THREE.Mesh[] = [];
+    const isTimeUp = ref(false);
+    const showHighScoreInput = ref(false);
+    const showHighScoreList = ref(false);
+    const highScores = ref<{ name: string; score: number }[]>([]);
+    const playerName = ref('');
 
     // Variables for Pyramids
-    let pyramids: THREE.Mesh[] = []; // Array to hold pyramids
+    let pyramids: THREE.Mesh[] = [];
 
     // Function to Generate Collectibles
     const generateCollectibles = () => {
@@ -837,8 +836,8 @@ export default defineComponent({
       }); // Orange color
 
       // Increase the number of pyramids
-      const numPyramids = 150; // Adjusted total number
-      const numPyramidsOnRoofs = 80; // Increased number on roofs
+      const numPyramids = 150;
+      const numPyramidsOnRoofs = 80;
       const numPyramidsOnRoads = numPyramids - numPyramidsOnRoofs;
 
       // Place pyramids on roads
@@ -884,7 +883,8 @@ export default defineComponent({
         scene.add(pyramid);
         pyramids.push(pyramid);
 
-        // Store Bounding Box for Collision Detection
+        // Update the Bounding Box After Transformation
+        pyramid.updateMatrixWorld();
         const boundingBox = new THREE.Box3().setFromObject(pyramid);
         pyramidData.push({ mesh: pyramid, boundingBox });
       }
@@ -914,17 +914,23 @@ export default defineComponent({
           Math.random()
         );
         const roofY =
-          houseBoundingBox.max.y + pyramidGeometry.parameters.height / 2;
+          houseBoundingBox.max.y +
+          pyramidGeometry.parameters.height / 2 +
+          0.5; // Raised by 0.5 units
 
         pyramid.position.set(pyramidX, roofY, pyramidZ);
 
         // Increase the size of pyramids on roofs for visibility
         pyramid.scale.set(1.5, 1.5, 1.5);
 
+        // Raise the pyramid so it protrudes above the roof
+        pyramid.position.y += 0.75; // Adjust as needed
+
         scene.add(pyramid);
         pyramids.push(pyramid);
 
-        // Store Bounding Box for Collision Detection
+        // Update the Bounding Box After Scaling and Positioning
+        pyramid.updateMatrixWorld();
         const boundingBox = new THREE.Box3().setFromObject(pyramid);
         pyramidData.push({ mesh: pyramid, boundingBox });
       }
@@ -991,11 +997,13 @@ export default defineComponent({
 
     // Variables for Car Jumping Mechanics
     let verticalVelocity = 0;
-    const gravity = -30; // Increase gravity for a snappier jump
+    const gravity = -30;
 
-    const makeCarJump = () => {
+    const makeCarJump = (impactVelocity: number) => {
       if (verticalVelocity === 0) {
-        verticalVelocity = 35; // Adjust the jump strength as needed
+        // Calculate Jump Strength Based on Impact Velocity
+        const jumpStrength = impactVelocity * 2; // Increased multiplier
+        verticalVelocity = THREE.MathUtils.clamp(jumpStrength, 40, 80); // Adjusted limits
       }
     };
 
@@ -1011,15 +1019,21 @@ export default defineComponent({
     let onGround = true;
 
     const getGroundHeightAtPosition = (x: number, z: number): number => {
-      let maxY = -1.65; // Ground level
-      const point = new THREE.Vector3(x, 0, z);
+      let maxY = -1.65; // Default ground level
 
       // Check if the car is over any house
       for (let i = 0; i < houseData.length; i++) {
         const house = houseData[i];
         const houseBoundingBox = house.boundingBox;
 
-        if (houseBoundingBox.containsPoint(point)) {
+        // Add a small buffer to ensure the car is fully over the house
+        const buffer = 1.5;
+        if (
+          x >= houseBoundingBox.min.x + buffer &&
+          x <= houseBoundingBox.max.x - buffer &&
+          z >= houseBoundingBox.min.z + buffer &&
+          z <= houseBoundingBox.max.z - buffer
+        ) {
           // Car is over this house
           const roofY = houseBoundingBox.max.y;
           if (roofY > maxY) {
@@ -1027,8 +1041,34 @@ export default defineComponent({
           }
         }
       }
+
+      // Check for Pyramids
+      for (let i = 0; i < pyramidData.length; i++) {
+        const pyramidInfo = pyramidData[i];
+        const pyramidBoundingBox = pyramidInfo.boundingBox;
+
+        // Add a small buffer for pyramids as well
+        const buffer = 1;
+        if (
+          x >= pyramidBoundingBox.min.x + buffer &&
+          x <= pyramidBoundingBox.max.x - buffer &&
+          z >= pyramidBoundingBox.min.z + buffer &&
+          z <= pyramidBoundingBox.max.z - buffer
+        ) {
+          const pyramidTopY = pyramidBoundingBox.max.y;
+          if (pyramidTopY > maxY) {
+            maxY = pyramidTopY;
+          }
+        }
+      }
+
       return maxY;
     };
+
+    // Add this with other state variables at the top of the setup function:
+    let currentLookTargetY = 0;
+    const LOOK_UP_HEIGHT = 3;
+    const LOOK_TRANSITION_SPEED = 0.1;
 
     const animate = (time: number) => {
       const deltaTime = time - prevTime; // Time in milliseconds
@@ -1155,38 +1195,37 @@ export default defineComponent({
           drawSpeedometer(speedInKmH);
 
           // Camera Follow Logic
-          const desiredCameraOffset = new THREE.Vector3(1, 5, -5);
-          const relativeCameraOffset = desiredCameraOffset.clone();
+          const cameraOffset = new THREE.Vector3(0, 5, -10);
 
-          // Rotate the Offset Based on the Car's Rotation
-          relativeCameraOffset.applyAxisAngle(
-            new THREE.Vector3(0, 1, 0),
-            car.rotation.y
+          // Rotate the offset to match the car's rotation
+          const offset = cameraOffset.clone().applyQuaternion(car.quaternion);
+
+          // Calculate the desired camera position
+          const desiredCameraPosition = car.position.clone().add(offset);
+
+          // Adjust interpolation speed based on whether the car is on the ground
+          const interpolationSpeed = onGround ? 0.05 : 0.1; // Looser on ground, tighter in air
+
+          // Smoothly interpolate the camera position
+          camera.position.lerp(desiredCameraPosition, interpolationSpeed);
+
+          // Calculate target look height with smooth transition
+          const targetLookHeight = onGround ? LOOK_UP_HEIGHT : 0;
+          currentLookTargetY = THREE.MathUtils.lerp(
+            currentLookTargetY,
+            targetLookHeight,
+            LOOK_TRANSITION_SPEED
           );
 
-          const desiredCameraPosition = car.position
-            .clone()
-            .add(relativeCameraOffset);
+          // Apply the smoothed look target
+          const lookTarget = car.position.clone();
+          lookTarget.y += currentLookTargetY;
 
-          // Smoothly Interpolate the Camera Position
-          camera.position.lerp(desiredCameraPosition, 0.05); // Adjusted lerp factor
-
-          // Create a Look-at Point in Front of and Above the Car
-          const lookAtOffset = new THREE.Vector3(0, 2, 10);
-          lookAtOffset.applyAxisAngle(
-            new THREE.Vector3(0, 1, 0),
-            car.rotation.y
-          );
-          const lookAtPoint = car.position.clone().add(lookAtOffset);
-
-          // Make the Camera Look at This Point
-          camera.lookAt(lookAtPoint);
-          camera.position.y = THREE.MathUtils.clamp(camera.position.y, 1, 20);
+          // Make the camera look at the calculated target
+          camera.lookAt(lookTarget);
 
           // Update Car's Bounding Box
           carBoundingBox.setFromObject(car);
-
-          const carPosition = car.position.clone();
 
           // Collision Detection with Houses
           let collidedWithSideOfHouse = false;
@@ -1259,9 +1298,11 @@ export default defineComponent({
           // Collision Detection with Pyramids
           for (let i = 0; i < pyramidData.length; i++) {
             const pyramidInfo = pyramidData[i];
+            // Update bounding box
+            pyramidInfo.boundingBox.setFromObject(pyramidInfo.mesh);
             if (carBoundingBox.intersectsBox(pyramidInfo.boundingBox)) {
               // Collision with pyramid detected
-              makeCarJump();
+              makeCarJump(Math.abs(velocity));
               break;
             }
           }
@@ -1280,8 +1321,12 @@ export default defineComponent({
             car.position.y = groundY + carHeight / 2;
             verticalVelocity = 0;
             onGround = true;
-          } else {
+          } else if (car.position.y - carHeight / 2 > groundY - 1) {
             onGround = false;
+          } else {
+            onGround = true;
+            car.position.y = groundY + carHeight / 2;
+            verticalVelocity = 0;
           }
 
           // Update Timer
@@ -1306,7 +1351,6 @@ export default defineComponent({
           const frame = Math.floor(
             (elapsed / explosionDuration) * totalExplosionFrames
           );
-
           if (frame < totalExplosionFrames) {
             const currentColumn = frame % explosionCols;
             const currentRow = Math.floor(frame / explosionCols);
