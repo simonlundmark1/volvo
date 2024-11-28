@@ -27,7 +27,7 @@
   <!-- Radio Interface -->
   <div v-if="!showOverlay && !showVehicleSelection && !showHighScoreInput && !showHighScoreList" class="radio-interface">
     <div class="radio-display">
-      <div class="radio-text">{{ currentChannel === 'local' ? 'BARSEBACK FM' : 'GÄLLIVARE NÄRRADIO 97,7' }}</div>
+      <div class="radio-text">{{ currentChannel === 'local' ? 'BARSEBACK FM' : 'GÄLLIVARE NÄRRADIO' }}</div>
       <div class="radio-frequency">{{ currentChannel === 'local' ? '98.7 MHz' : '97.7 MHz' }}</div>
     </div>
     <button class="radio-button" @click="toggleRadioChannel">TUNE</button>
@@ -1743,7 +1743,7 @@ export default defineComponent({
         // Switch to online radio
         if (!onlineRadio) {
           onlineRadio = new Audio('https://stream.radiogellivare.se/listen/977mhz/radio.mp3');
-          onlineRadio.volume = 0.8;
+          onlineRadio.volume = 1;
         }
         if (backgroundAudio) {
           backgroundAudio.pause();
