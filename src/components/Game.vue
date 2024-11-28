@@ -1212,7 +1212,7 @@ export default defineComponent({
           const desiredCameraPosition = car.position.clone().add(offset);
 
           // Adjust interpolation speed based on whether the car is on the ground
-          const interpolationSpeed = onGround ? 0.05 : 0.1; // Looser on ground, tighter in air
+          const interpolationSpeed = onGround ? 0.05 : 0.05; // Looser on ground, tighter in air
 
           // Smoothly interpolate the camera position
           camera.position.lerp(desiredCameraPosition, interpolationSpeed);
