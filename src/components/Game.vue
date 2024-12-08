@@ -14,43 +14,46 @@
         <p>Press Enter to select</p>
       </div>
     </div>
-  </div>
-  <!-- Speedometer -->
-  <div v-if="!showOverlay && !showVehicleSelection" class="speedometer-container">
-    <canvas ref="speedometerCanvas" width="200" height="200"></canvas>
-  </div>
-  <!-- HUD (Heads-Up Display) -->
-  <div v-if="!showOverlay && !showVehicleSelection && !showHighScoreInput && !showHighScoreList" class="hud">
-    <div class="timer">{{ Math.ceil(timeRemaining) }}</div>
-    <div class="score">Score: {{ score }}</div>
-  </div>
-  <!-- Radio Interface -->
-  <div v-if="!showOverlay && !showVehicleSelection && !showHighScoreInput && !showHighScoreList" class="radio-interface">
-    <div class="radio-display">
-      <div class="radio-text">{{ currentChannel === 'local' ? 'BARSEBACK FM' : 'GÄLLIVARE NÄRRADIO' }}</div>
-      <div class="radio-frequency">{{ currentChannel === 'local' ? '98.7 MHz' : '97.7 MHz' }}</div>
+
+    <!-- Speedometer -->
+    <div v-if="!showOverlay && !showVehicleSelection" class="speedometer-container">
+      <canvas ref="speedometerCanvas" width="200" height="200"></canvas>
     </div>
-    <button class="radio-button" @click="toggleRadioChannel">TUNE</button>
-  </div>
-  <!-- High Score Input Screen -->
-  <div v-if="showHighScoreInput" class="high-score-input">
-    <div class="high-score-content">
-      <h2>Time's Up!</h2>
-      <p>Your Score: {{ score }}</p>
-      <input v-model="playerName" placeholder="Enter your name" />
-      <button @click="submitHighScore">Submit</button>
+    <!-- HUD (Heads-Up Display) -->
+    <div v-if="!showOverlay && !showVehicleSelection && !showHighScoreInput && !showHighScoreList" class="hud">
+      <div class="timer">Time: {{ Math.ceil(timeRemaining) }}</div>
+      <div class="score">Score: {{ score }}</div>
     </div>
-  </div>
-  <!-- High Score List Screen -->
-  <div v-if="showHighScoreList" class="high-score-list">
-    <div class="high-score-content">
-      <h2>High Scores</h2>
-      <ol>
-        <li v-for="(entry, index) in highScores" :key="index">
-          {{ entry.name }} - {{ entry.score }}
-        </li>
-      </ol>
-      <button @click="restartGame">Play Again</button>
+    <!-- Radio Interface -->
+    <div v-if="!showOverlay && !showVehicleSelection && !showHighScoreInput && !showHighScoreList" class="radio-interface">
+      <div class="radio-display">
+        <div class="radio-text">{{ currentChannel === 'local' ? 'BARSEBACK FM' : 'GÄLLIVARE NÄRRADIO' }}</div>
+        <div class="radio-frequency">{{ currentChannel === 'local' ? '98.7 MHz' : '97.7 MHz' }}</div>
+      </div>
+      <button class="radio-button" @click="toggleRadioChannel">TUNE</button>
+    </div>
+    <!-- High Score Input Screen -->
+    <div v-if="showHighScoreInput" class="high-score-input">
+      <div class="high-score-content">
+        <h2>Time's Up!</h2>
+        <p>Your Score: {{ score }}</p>
+        <input v-model="playerName" placeholder="Enter your name" />
+        <button @click="submitHighScore">Submit</button>
+        <p>Press Enter to submit</p>
+      </div>
+    </div>
+    <!-- High Score List Screen -->
+    <div v-if="showHighScoreList" class="high-score-list">
+      <div class="high-score-content">
+        <h2>High Scores</h2>
+        <ol>
+          <li v-for="(entry, index) in highScores" :key="index">
+            {{ entry.name }} - {{ entry.score }}
+          </li>
+        </ol>
+        <button @click="restartGame">Play Again</button>
+        <p>Press Enter to play again</p>
+      </div>
     </div>
   </div>
 </template>
@@ -110,7 +113,7 @@ export default defineComponent({
     const MAX_REVERSE_SPEED = -10;
     const MAX_ACCELERATION = 0.3;
     const MIN_ACCELERATION = 0.01;
-    const DECELERATION = 1.5;
+    const DECELERATION = 0.3;
     const FRICTION = 0.993;
 
     const MAX_STEERING_SENSITIVITY = 0.25;
@@ -120,10 +123,8 @@ export default defineComponent({
     const MAX_TILT_ANGLE = THREE.MathUtils.degToRad(-15);
     const TILT_LERP_FACTOR = 0.3;
 
-    // Current Tilt Angle of the Car
     let currentTiltAngle = 0;
 
-    // Constants for Renderer Dimensions and Grid
     const RENDERER_WIDTH = 480;
     const RENDERER_HEIGHT = 360;
     const rows = 10;
@@ -133,7 +134,6 @@ export default defineComponent({
     const blockSpacing = blockSize + roadWidth;
     const roadHeight = 0.02;
 
-    // Data for Houses and Trees
     const houseData: Array<{
       position: THREE.Vector3;
       boundingBox: THREE.Box3;
@@ -144,39 +144,112 @@ export default defineComponent({
       boundingSphere: THREE.Sphere;
     }> = [];
 
-    // Data for Pyramids and Collectibles Bounding Boxes
     const pyramidData: Array<{
-      mesh: THREE.Mesh;
+      mesh: THREE.Mesh | THREE.Group;
       boundingBox: THREE.Box3;
     }> = [];
     const collectibleData: Array<{
       mesh: THREE.Mesh;
       boundingBox: THREE.Box3;
+      isWunderbaum?: boolean;
     }> = [];
 
-    // Ambient Light Reference
     let ambientLight: THREE.AmbientLight;
 
     const handleLoadingError = (error: unknown, assetType: string) => {
       console.error(`Error loading ${assetType}:`, error);
     };
 
-    // Explosion Texture and Animation Parameters
     let explosionTexture: THREE.Texture;
     const explosionRows = 4;
     const explosionCols = 4;
     const totalExplosionFrames = explosionRows * explosionCols;
     const explosionDuration = 1000;
 
-    // Explosion Audio
     let explosionAudio: HTMLAudioElement | null = null;
+    let jumpAudio: HTMLAudioElement | null = null;
+    let snusCollectAudio: HTMLAudioElement | null = null;
 
-    // Initialize Vehicle Selection Scene
+    let lastCarPosition = new THREE.Vector3();
+
+    let lastJumpTime = 0;
+    const JUMP_DELAY = 0.05;
+
+    const createSnusTexture = () => {
+      const size = 256;
+      const canvas = document.createElement('canvas');
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext('2d')!;
+
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, size, size);
+
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 80px Arial';
+      const text = 'SNUS';
+      const textWidth = ctx.measureText(text).width;
+      ctx.fillText(text, (size - textWidth) / 2, size / 2 + 30);
+
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.needsUpdate = true;
+      return texture;
+    };
+
+    // Wunderbaum creation function
+    const createWunderbaumTexture = () => {
+      const size = 256;
+      const canvas = document.createElement('canvas');
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext('2d')!;
+
+      ctx.clearRect(0, 0, size, size);
+
+      const cx = size/2;
+      ctx.fillStyle = '#228B22'; // Forest green
+
+      ctx.beginPath();
+      ctx.moveTo(cx, 20);
+      ctx.lineTo(cx - 80, 200);
+      ctx.lineTo(cx + 80, 200);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.fillStyle = '#8B4513';
+      ctx.fillRect(cx - 10, 200, 20, 40);
+
+      ctx.save();
+      ctx.translate(cx + 30, 160);
+      ctx.rotate(Math.PI/2);
+      ctx.fillStyle = '#000';
+      ctx.font = 'bold 16px Arial';
+      ctx.fillText('WUNDERBAUM', 0, 0);
+      ctx.restore();
+
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.needsUpdate = true;
+      return texture;
+    };
+
+    const createWunderbaumMesh = () => {
+      const texture = createWunderbaumTexture();
+      const material = new THREE.MeshBasicMaterial({
+        map: texture,
+        transparent: true,
+        side: THREE.DoubleSide,
+      });
+
+      const geometry = new THREE.PlaneGeometry(3, 4);
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.rotation.y = Math.PI / 2;
+      return mesh;
+    };
+
+    let collectibles: THREE.Mesh[] = [];
+
     const initVehicleSelectionScene = () => {
-      // Initialize Scene
       vehicleSelectionScene = new THREE.Scene();
-
-      // Initialize Camera
       vehicleSelectionCamera = new THREE.PerspectiveCamera(
         90,
         RENDERER_WIDTH / RENDERER_HEIGHT,
@@ -186,30 +259,22 @@ export default defineComponent({
       vehicleSelectionCamera.position.set(7, 1, -2);
       vehicleSelectionCamera.lookAt(-1, 0, 0);
 
-      // Set Background to Black
       vehicleSelectionScene.background = new THREE.TextureLoader().load(
         '/assets/images/showroom.webp'
       );
 
-      // Add Ambient Light
       const ambientLightSelection = new THREE.AmbientLight(0xffffff, 0.1);
       vehicleSelectionScene.add(ambientLightSelection);
 
-      // Load the Car Model
       const objLoader = new OBJLoader();
       objLoader.load(
         '/assets/models/model_0.obj',
         (object) => {
           vehicleSelectionCar = object;
-
-          // Set Scale and Position
           vehicleSelectionCar.scale.set(0.01, 0.01, 0.01);
           vehicleSelectionCar.position.set(0, -2.5, 0);
-
-          // Rotate to Face Positive Z-axis
           vehicleSelectionCar.rotation.y += Math.PI;
 
-          // Load Texture for the Car
           const textureLoader = new THREE.TextureLoader();
           textureLoader.load(
             '/assets/models/Volvo_Diffusenew.png',
@@ -225,7 +290,6 @@ export default defineComponent({
                 4
               );
 
-              // Apply Texture to All Meshes in the Car Object
               vehicleSelectionCar.traverse((node) => {
                 if ((node as THREE.Mesh).isMesh) {
                   const mesh = node as THREE.Mesh;
@@ -242,23 +306,15 @@ export default defineComponent({
             (error) => handleLoadingError(error, 'Volvo_Diffusenew.png')
           );
 
-          // Add Car to the Vehicle Selection Scene
           vehicleSelectionScene.add(vehicleSelectionCar);
-          console.log(
-            'Vehicle selection car model loaded successfully with the correct texture'
-          );
         },
         undefined,
         (error) => handleLoadingError(error, 'model_0.obj')
       );
     };
 
-    // Initialize Main Game Scene
     const initScene = () => {
-      // Initialize Scene
       scene = markRaw(new THREE.Scene());
-
-      // Initialize Camera
       camera = markRaw(
         new THREE.PerspectiveCamera(
           75,
@@ -270,7 +326,6 @@ export default defineComponent({
       camera.position.set(0, 5, 10);
       camera.lookAt(0, 0, 0);
 
-      // Initialize Renderer
       renderer = markRaw(
         new THREE.WebGLRenderer({
           antialias: false,
@@ -283,26 +338,21 @@ export default defineComponent({
       renderer.setSize(RENDERER_WIDTH, RENDERER_HEIGHT);
       renderer.shadowMap.enabled = false;
 
-      // Append Renderer to the DOM
       if (gameContainer.value) {
         gameContainer.value.appendChild(renderer.domElement);
       } else {
         console.error('Game container is not available');
       }
 
-      // Add Ambient Light with Warmer Color
       ambientLight = new THREE.AmbientLight(0xffd4a3, 1);
       scene.add(ambientLight);
 
-      // Add Directional Light for Warm Highlights
       const directionalLight = new THREE.DirectionalLight(0xff9933, 0.5);
       directionalLight.position.set(1, 1, 0);
       scene.add(directionalLight);
 
-      // Initialize Texture Loader
       const textureLoader = new THREE.TextureLoader();
 
-      // Load Ground Texture
       const groundTexture = textureLoader.load(
         '/assets/textures/ground.jpg',
         (texture: THREE.Texture) => {
@@ -322,7 +372,6 @@ export default defineComponent({
         (error) => handleLoadingError(error, 'ground texture')
       );
 
-      // Create Ground Mesh
       const planeGeometry = new THREE.PlaneGeometry(2000, 2000);
       const planeMaterial = new THREE.MeshBasicMaterial({
         map: groundTexture,
@@ -333,7 +382,6 @@ export default defineComponent({
       ground.position.set(0, 0, 0);
       scene.add(ground);
 
-      // Load Road Texture
       const roadTexture = textureLoader.load(
         '/assets/textures/road.jpg',
         (texture) => {
@@ -353,60 +401,44 @@ export default defineComponent({
         (error) => handleLoadingError(error, 'road texture')
       );
 
-      // Define Road and Grid Properties
-      const roadWidth = 15;
-      const roadHeight = 0.02;
-      const blockSize = 60;
-      const rows = 10;
-      const columns = 10;
-      const blockSpacing = blockSize + roadWidth;
-
-      // Create Road Material
       const roadMaterial = new THREE.MeshBasicMaterial({
         map: roadTexture,
       });
 
-      // Create Horizontal Roads (X-axis)
       for (let row = 0; row <= rows; row++) {
         const roadGeometry = new THREE.BoxGeometry(
           columns * blockSpacing,
-          roadHeight,
+          0.02,
           roadWidth
         );
         const roadMesh = new THREE.Mesh(roadGeometry, roadMaterial);
 
-        // Position Each Horizontal Road
         roadMesh.position.set(
           (columns * blockSpacing) / 2 - blockSpacing / 2,
-          roadHeight / 2,
+          0.02 / 2,
           row * blockSpacing - blockSpacing / 2
         );
 
-        // Add to Scene
         scene.add(roadMesh);
       }
 
-      // Create Vertical Roads (Z-axis)
       for (let col = 0; col <= columns; col++) {
         const roadGeometry = new THREE.BoxGeometry(
           roadWidth,
-          roadHeight,
+          0.02,
           rows * blockSpacing
         );
         const roadMesh = new THREE.Mesh(roadGeometry, roadMaterial);
 
-        // Position Each Vertical Road
         roadMesh.position.set(
           col * blockSpacing - blockSpacing / 2,
-          roadHeight / 2,
+          0.02 / 2,
           (rows * blockSpacing) / 2 - blockSpacing / 2
         );
 
-        // Add to Scene
         scene.add(roadMesh);
       }
 
-      // Load House Texture
       const houseTexture = textureLoader.load(
         '/assets/textures/house.jpg',
         (texture) => {
@@ -426,11 +458,9 @@ export default defineComponent({
         (error) => handleLoadingError(error, 'house texture')
       );
 
-      // Prepare Geometries and Materials for Instancing
       const pineTreeGeometry = createPineTreeGeometry();
       const treeMaterial = new THREE.MeshBasicMaterial({ vertexColors: true });
 
-      // Create House Geometry with Roof
       const houseGeometry = new THREE.BoxGeometry(10, 20, 10);
       const roofGeometry = new THREE.PlaneGeometry(10, 10);
       roofGeometry.rotateX(-Math.PI / 2);
@@ -445,7 +475,6 @@ export default defineComponent({
         map: houseTexture,
       });
 
-      // Calculate Total Number of Houses and Trees
       let totalHouses = 0;
       let totalTrees = 0;
 
@@ -456,7 +485,6 @@ export default defineComponent({
         }
       }
 
-      // Create InstancedMeshes
       const houseInstancedMesh = new THREE.InstancedMesh(
         combinedHouseGeometry,
         houseMaterial,
@@ -468,27 +496,21 @@ export default defineComponent({
         totalTrees
       );
 
-      // Index Counters for Instances
       let houseIndex = 0;
       let treeIndex = 0;
 
-      // Add Houses and Trees Using InstancedMesh
       const dummy = new THREE.Object3D();
 
       for (let row = 0; row < rows; row++) {
         for (let col = 0; col < columns; col++) {
-          // Center Position of Each Block
           const blockCenterX = col * blockSpacing;
           const blockCenterZ = row * blockSpacing;
 
-          // Randomly Decide the Number of Houses in This Block
           const houseCount = Math.floor(Math.random() * 3) + 1;
 
-          // Store house positions for this block to check tree placement
           const blockHousePositions = [];
 
           for (let i = 0; i < houseCount; i++) {
-            // Randomize Position Within the Block
             const buffer = roadWidth / 2 + 5;
             const offsetX =
               (Math.random() - 0.5) * (blockSize - roadWidth - buffer * 2);
@@ -498,21 +520,17 @@ export default defineComponent({
             const houseX = blockCenterX + offsetX;
             const houseZ = blockCenterZ + offsetZ;
 
-            // Randomize House Size
             const width = Math.random() * 20 + 5;
             const height = Math.random() * 20 + 10;
             const depth = Math.random() * 10 + 5;
 
-            // Update Dummy Object for Transformation
             dummy.position.set(houseX, height / 2, houseZ);
             dummy.scale.set(width / 10, height / 20, depth / 10);
             dummy.updateMatrix();
 
-            // Set the Instance Matrix
             houseInstancedMesh.setMatrixAt(houseIndex, dummy.matrix);
             houseIndex++;
 
-            // Create the transformed bounding box for this instance
             const originalBoundingBox = new THREE.Box3().setFromBufferAttribute(
               combinedHouseGeometry.attributes.position
             );
@@ -520,7 +538,6 @@ export default defineComponent({
               .clone()
               .applyMatrix4(dummy.matrix);
 
-            // Store House Data for Collision Detection
             houseData.push({
               position: dummy.position.clone(),
               boundingBox: transformedBoundingBox,
@@ -533,13 +550,11 @@ export default defineComponent({
             });
           }
 
-          // Add Trees with Variable Count and Better Placement
           const treesInBlock = Math.floor(Math.random() * 15) + 20;
           let attempts = 0;
           let placedTrees = 0;
 
           while (placedTrees < treesInBlock && attempts < 50) {
-            // Randomize Tree Position Within the Block
             const buffer = roadWidth / 2 + 3;
             const treeOffsetX =
               (Math.random() - 0.5) * (blockSize - roadWidth - buffer * 2);
@@ -549,7 +564,6 @@ export default defineComponent({
             const treeX = blockCenterX + treeOffsetX;
             const treeZ = blockCenterZ + treeOffsetZ;
 
-            // Check distance from houses
             let tooClose = false;
             for (const house of blockHousePositions) {
               const dx = treeX - house.x;
@@ -561,7 +575,6 @@ export default defineComponent({
               }
             }
 
-            // Check distance from other trees in this block
             for (let i = 0; i < treeData.length; i++) {
               const otherTree = treeData[i];
               const dx = treeX - otherTree.position.x;
@@ -574,15 +587,12 @@ export default defineComponent({
             }
 
             if (!tooClose) {
-              // Even more varied scale with smaller average size
               const treeScale = 0.4 + Math.random() * 0.3;
 
-              // Random slight tilt for more natural look
               const maxTilt = 0.1;
               const randomTiltX = (Math.random() - 0.5) * maxTilt;
               const randomTiltZ = (Math.random() - 0.5) * maxTilt;
 
-              // Position trees slightly below ground level to fix floating
               dummy.position.set(treeX, -0.2, treeZ);
               dummy.scale.set(treeScale, treeScale, treeScale);
               dummy.rotation.set(
@@ -595,14 +605,9 @@ export default defineComponent({
               treeInstancedMesh.setMatrixAt(treeIndex, dummy.matrix);
               treeIndex++;
 
-              // Store Tree Data for Collision Detection
               const treePosition = new THREE.Vector3(treeX, -0.2, treeZ);
               const boundingSphere = new THREE.Sphere(
-                new THREE.Vector3(
-                  treeX,
-                  -0.2 + treeScale * 9,
-                  treeZ
-                ),
+                new THREE.Vector3(treeX, -0.2 + treeScale * 9, treeZ),
                 treeScale * 7
               );
 
@@ -619,33 +624,23 @@ export default defineComponent({
         }
       }
 
-      // Add InstancedMeshes to the Scene
       scene.add(houseInstancedMesh);
       scene.add(treeInstancedMesh);
 
-      // Generate Collectibles
       generateCollectibles();
-
-      // Add Pyramids Along the Roads and Roofs
       generatePyramids();
 
-      // Load OBJ Model as Car
       const objLoaderMain = new OBJLoader();
-
-      // Load the Car Model
       objLoaderMain.load(
         '/assets/models/model_0.obj',
         (object) => {
           car = object;
 
-          // Set Scale and Position
           car.scale.set(0.01, 0.01, 0.01);
           car.position.y = -1.65;
 
-          // Rotate to Face Positive Z-axis
           car.rotation.y += Math.PI;
 
-          // Load Texture for the Car
           textureLoader.load(
             '/assets/models/Volvo_Diffusenew.png',
             (texture: THREE.Texture) => {
@@ -660,7 +655,6 @@ export default defineComponent({
                 4
               );
 
-              // Apply Texture to All Meshes in the Car Object
               car.traverse((node) => {
                 if ((node as THREE.Mesh).isMesh) {
                   const mesh = node as THREE.Mesh;
@@ -677,21 +671,18 @@ export default defineComponent({
             (error) => handleLoadingError(error, 'Volvo_Diffusenew.png')
           );
 
-          // Add Car to the Scene
           scene.add(car);
           modelLoaded = true;
-          console.log('Car model loaded successfully with the correct texture');
+          lastCarPosition.copy(car.position);
         },
         undefined,
         (error) => handleLoadingError(error, 'model_0.obj')
       );
 
-      // Load Equirectangular Texture for Background
       const textureLoader2 = new THREE.TextureLoader();
       textureLoader2.load(
         '/assets/images/6.png',
         (texture) => {
-          // Use PMREMGenerator to process the texture
           const pmremGenerator = new PMREMGenerator(renderer);
           pmremGenerator.compileEquirectangularShader();
 
@@ -699,18 +690,15 @@ export default defineComponent({
 
           scene.background = envMap;
 
-          // Dispose of the original texture and PMREMGenerator to free up memory
           texture.dispose();
           pmremGenerator.dispose();
 
-          // Add Warm Color Overlay to Sky
           scene.fog = new THREE.FogExp2(0xffd4a3, 0.002);
         },
         undefined,
         (error) => handleLoadingError(error, '6.png')
       );
 
-      // Load Explosion Sprite Sheet Texture
       explosionTexture = textureLoader.load(
         '/assets/images/exp2.png',
         (texture: THREE.Texture) => {
@@ -727,248 +715,209 @@ export default defineComponent({
       animate();
     };
 
-    // Variables for the Collectibles
     const timeRemaining = ref(60);
     const score = ref(0);
-    let collectibles: THREE.Mesh[] = [];
     const isTimeUp = ref(false);
     const showHighScoreInput = ref(false);
     const showHighScoreList = ref(false);
     const highScores = ref<{ name: string; score: number }[]>([]);
     const playerName = ref('');
 
-    // Variables for Pyramids
-    let pyramids: THREE.Mesh[] = [];
+    let pyramids: (THREE.Mesh | THREE.Group)[] = [];
 
-    // Function to Generate Collectibles
+    const oldGenerateCollectibles = () => {
+      // not used
+    };
+
     const generateCollectibles = () => {
-      // Create a sphere geometry for the collectibles
-      const collectibleGeometry = new THREE.SphereGeometry(1, 16, 16);
-      const collectibleMaterial = new THREE.MeshBasicMaterial({
-        color: 0xff0000,
-      }); // Red color
+      const collectibleGeometry = new THREE.CylinderGeometry(1, 1, 0.5, 32);
+      const collectibleTexture = createSnusTexture();
+      const collectibleSideMaterial = new THREE.MeshBasicMaterial({ color: 0x000000 });
+      const collectibleTopBottomMaterial = new THREE.MeshBasicMaterial({ map: collectibleTexture });
+      const collectibleMaterials = [
+        collectibleSideMaterial,
+        collectibleTopBottomMaterial,
+        collectibleTopBottomMaterial
+      ];
 
-      // Increase the number of collectibles
       const numCollectibles = 50;
-      const numCollectiblesOnRoofs = 30; // Increased number of collectibles on roofs
+      const numCollectiblesOnRoofs = 30;
       const numCollectiblesOnRoads = numCollectibles - numCollectiblesOnRoofs;
 
-      // Place collectibles on roads
       for (let i = 0; i < numCollectiblesOnRoads; i++) {
-        const collectible = new THREE.Mesh(
-          collectibleGeometry,
-          collectibleMaterial
-        );
+        const collectible = new THREE.Mesh(collectibleGeometry, collectibleMaterials);
+        collectible.rotation.x = Math.PI / 2;
 
-        // Randomly place the collectible on a road segment
-        // First, choose a random row and column
         const randomRow = Math.floor(Math.random() * 10);
         const randomCol = Math.floor(Math.random() * 10);
 
-        // The position of the road segment
         const roadX = randomCol * (60 + 15) - (60 + 15) / 2;
         const roadZ = randomRow * (60 + 15) - (60 + 15) / 2;
 
-        // Randomly position along the road
-        const offsetX = (Math.random() - 0.5) * 15 * 0.8; // Slightly within the road width
+        const offsetX = (Math.random() - 0.5) * 15 * 0.8;
         const offsetZ = (Math.random() - 0.5) * 15 * 0.8;
 
-        // Decide whether to place on horizontal or vertical road
         if (Math.random() < 0.5) {
-          // Horizontal road
-          collectible.position.set(
-            roadX + offsetX,
-            1, // Slightly above ground
-            roadZ
-          );
+          collectible.position.set(roadX + offsetX, 1, roadZ);
         } else {
-          // Vertical road
           collectible.position.set(roadX, 1, roadZ + offsetZ);
         }
 
-        // Add to the scene and to the collectibles array
         scene.add(collectible);
         collectibles.push(collectible);
 
-        // Store Bounding Box for Collision Detection
         const boundingBox = new THREE.Box3().setFromObject(collectible);
-        collectibleData.push({ mesh: collectible, boundingBox });
+        collectibleData.push({ mesh: collectible, boundingBox, isWunderbaum: false });
       }
 
-      // Place collectibles on roofs
       for (let i = 0; i < numCollectiblesOnRoofs; i++) {
-        const collectible = new THREE.Mesh(
-          collectibleGeometry,
-          collectibleMaterial
-        );
+        const wunderbaum = createWunderbaumMesh();
+        wunderbaum.userData.isWunderbaum = true;
 
-        // Randomly select a house
         const randomHouseIndex = Math.floor(Math.random() * houseData.length);
         const house = houseData[randomHouseIndex];
         const houseBoundingBox = house.boundingBox;
 
-        // Randomly position on the roof
         const roofMinX = houseBoundingBox.min.x + 1;
         const roofMaxX = houseBoundingBox.max.x - 1;
         const roofMinZ = houseBoundingBox.min.z + 1;
         const roofMaxZ = houseBoundingBox.max.z - 1;
-        const collectibleX = THREE.MathUtils.lerp(
-          roofMinX,
-          roofMaxX,
-          Math.random()
-        );
-        const collectibleZ = THREE.MathUtils.lerp(
-          roofMinZ,
-          roofMaxZ,
-          Math.random()
-        );
-        const roofY = houseBoundingBox.max.y + 1; // Slightly above the roof
+        const wunderX = THREE.MathUtils.lerp(roofMinX, roofMaxX, Math.random());
+        const wunderZ = THREE.MathUtils.lerp(roofMinZ, roofMaxZ, Math.random());
+        const roofY = houseBoundingBox.max.y + 1;
 
-        collectible.position.set(collectibleX, roofY, collectibleZ);
+        wunderbaum.position.set(wunderX, roofY, wunderZ);
+        wunderbaum.rotation.y = Math.random() * Math.PI * 2;
 
-        // Add to the scene and to the collectibles array
-        scene.add(collectible);
-        collectibles.push(collectible);
+        scene.add(wunderbaum);
+        collectibles.push(wunderbaum);
 
-        // Store Bounding Box for Collision Detection
-        const boundingBox = new THREE.Box3().setFromObject(collectible);
-        collectibleData.push({ mesh: collectible, boundingBox });
+        const boundingBox = new THREE.Box3().setFromObject(wunderbaum);
+        collectibleData.push({ mesh: wunderbaum, boundingBox, isWunderbaum: true });
       }
     };
 
-    // Function to Generate Pyramids
-    const generatePyramids = () => {
-      const pyramidGeometry = new THREE.ConeGeometry(2, 1, 8);
-      const pyramidMaterial = new THREE.MeshBasicMaterial({
-        color: 0xffa500,
-      }); // Orange color
+    const createCheckerTexture = () => {
+      const size = 512;
+      const canvas = document.createElement('canvas');
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext('2d')!;
 
-      // Increase the number of pyramids
-      const numPyramids = 150;
-      const numPyramidsOnRoofs = 80;
-      const numPyramidsOnRoads = numPyramids - numPyramidsOnRoofs;
+      const numSquares = 6;
+      const squareSize = size / numSquares;
 
-      // Place pyramids on roads
-      for (let i = 0; i < numPyramidsOnRoads; i++) {
-        const pyramid = new THREE.Mesh(pyramidGeometry, pyramidMaterial);
+      for (let y = 0; y < numSquares; y++) {
+        for (let x = 0; x < numSquares; x++) {
+          ctx.fillStyle = ((x - 2) + y) % 2 === 0 ? '#FFFFFF' : '#606060';
+          ctx.fillRect(x * squareSize, y * squareSize, squareSize, squareSize);
+        }
+      }
 
-        // Randomly choose a road segment
-        const randomRow = Math.floor(Math.random() * (10 + 1));
-        const randomCol = Math.floor(Math.random() * (10 + 1));
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.wrapS = THREE.RepeatWrapping;
+      texture.wrapT = THREE.RepeatWrapping;
+      texture.minFilter = THREE.LinearFilter;
+      texture.magFilter = THREE.LinearFilter;
+      texture.needsUpdate = true;
+      return texture;
+    };
+
+    function generatePyramids() {
+      const topRadius = 3;
+      const bottomRadius = 6;
+      const height = 2;
+
+      const sideTexture = createCheckerTexture();
+      const sideMaterial = new THREE.MeshBasicMaterial({ map: sideTexture });
+      const topMaterial = new THREE.MeshBasicMaterial({ color: 0x808080 });
+      const bottomMaterial = new THREE.MeshBasicMaterial({ color: 0x808080 });
+
+      const createSpeedBump = (): THREE.Mesh => {
+        const geometry = new THREE.CylinderGeometry(topRadius, bottomRadius, height, 4, 1, false);
+        const materials = [sideMaterial, topMaterial, bottomMaterial];
+        const mesh = new THREE.Mesh(geometry, materials);
+        mesh.rotation.x = 0;
+        return mesh;
+      };
+
+      const numSpeedBumps = 40;
+      const numOnRoofs = 10;
+      const numOnGround = numSpeedBumps - numOnRoofs;
+
+      for (let i = 0; i < numOnGround; i++) {
+        const bump = createSpeedBump();
+
+        const randomRow = Math.floor(Math.random() * (rows + 1));
+        const randomCol = Math.floor(Math.random() * (columns + 1));
         const isHorizontal = Math.random() < 0.5;
-
-        // Calculate the position
         let posX, posZ;
+
         if (isHorizontal) {
-          // Horizontal road
+          posZ = randomRow * blockSpacing - blockSpacing / 2;
           posX = (columns * blockSpacing) / 2 - blockSpacing / 2;
           posX += (Math.random() - 0.5) * (columns * blockSpacing);
-          posZ = randomRow * blockSpacing - blockSpacing / 2;
-          posX = THREE.MathUtils.clamp(
-            posX,
-            0,
-            columns * blockSpacing - blockSpacing
-          );
+          posX = THREE.MathUtils.clamp(posX, 0, columns * blockSpacing - blockSpacing);
         } else {
-          // Vertical road
           posX = randomCol * blockSpacing - blockSpacing / 2;
           posZ = (rows * blockSpacing) / 2 - blockSpacing / 2;
           posZ += (Math.random() - 0.5) * (rows * blockSpacing);
-          posZ = THREE.MathUtils.clamp(
-            posZ,
-            0,
-            rows * blockSpacing - blockSpacing
-          );
+          posZ = THREE.MathUtils.clamp(posZ, 0, rows * blockSpacing - blockSpacing);
         }
 
-        // Adjust Y position to be on top of the road
-        pyramid.position.set(
-          posX,
-          roadHeight + pyramidGeometry.parameters.height / 2,
-          posZ
-        );
+        bump.position.set(posX, 0, posZ);
+        scene.add(bump);
+        pyramids.push(bump);
 
-        scene.add(pyramid);
-        pyramids.push(pyramid);
-
-        // Update the Bounding Box After Transformation
-        pyramid.updateMatrixWorld();
-        const boundingBox = new THREE.Box3().setFromObject(pyramid);
-        pyramidData.push({ mesh: pyramid, boundingBox });
+        const boundingBox = new THREE.Box3().setFromObject(bump);
+        pyramidData.push({ mesh: bump, boundingBox });
       }
 
-      // Place pyramids on roofs
-      for (let i = 0; i < numPyramidsOnRoofs; i++) {
-        const pyramid = new THREE.Mesh(pyramidGeometry, pyramidMaterial);
-
-        // Randomly select a house
+      for (let i = 0; i < numOnRoofs; i++) {
+        const bump = createSpeedBump();
         const randomHouseIndex = Math.floor(Math.random() * houseData.length);
         const house = houseData[randomHouseIndex];
         const houseBoundingBox = house.boundingBox;
 
-        // Randomly position on the roof
         const roofMinX = houseBoundingBox.min.x + 1;
         const roofMaxX = houseBoundingBox.max.x - 1;
         const roofMinZ = houseBoundingBox.min.z + 1;
         const roofMaxZ = houseBoundingBox.max.z - 1;
-        const pyramidX = THREE.MathUtils.lerp(
-          roofMinX,
-          roofMaxX,
-          Math.random()
-        );
-        const pyramidZ = THREE.MathUtils.lerp(
-          roofMinZ,
-          roofMaxZ,
-          Math.random()
-        );
-        const roofY =
-          houseBoundingBox.max.y +
-          pyramidGeometry.parameters.height / 2 +
-          0.5; // Raised by 0.5 units
 
-        pyramid.position.set(pyramidX, roofY, pyramidZ);
+        const bumpX = THREE.MathUtils.lerp(roofMinX, roofMaxX, Math.random());
+        const bumpZ = THREE.MathUtils.lerp(roofMinZ, roofMaxZ, Math.random());
+        const roofY = houseBoundingBox.max.y;
 
-        // Increase the size of pyramids on roofs for visibility
-        pyramid.scale.set(1.5, 1.5, 1.5);
+        bump.position.set(bumpX, roofY, bumpZ);
+        scene.add(bump);
+        pyramids.push(bump);
 
-        // Raise the pyramid so it protrudes above the roof
-        pyramid.position.y += 0.75; // Adjust as needed
-
-        scene.add(pyramid);
-        pyramids.push(pyramid);
-
-        // Update the Bounding Box After Scaling and Positioning
-        pyramid.updateMatrixWorld();
-        const boundingBox = new THREE.Box3().setFromObject(pyramid);
-        pyramidData.push({ mesh: pyramid, boundingBox });
+        const boundingBox = new THREE.Box3().setFromObject(bump);
+        pyramidData.push({ mesh: bump, boundingBox });
       }
-    };
+    }
 
-    // Helper Function to Create Detailed Pine Tree Geometry
     const createPineTreeGeometry = (): THREE.BufferGeometry => {
-      // Make trunk even smaller
-      const trunkGeometry = new THREE.CylinderGeometry(0.4, 0.4, 6, 8); // Smaller trunk
-      trunkGeometry.translate(0, 3, 0); // Lower position
+      const trunkGeometry = new THREE.CylinderGeometry(0.4, 0.4, 6, 8);
+      trunkGeometry.translate(0, 3, 0);
 
       const foliageGeometries: THREE.BufferGeometry[] = [];
-      const numLayers = 4; // Keep 4 layers
-      const foliageHeight = 12; // Reduced total height
+      const numLayers = 4;
+      const foliageHeight = 12;
       const layerHeight = foliageHeight / numLayers;
 
       for (let i = 0; i < numLayers; i++) {
-        const radius = 2.5 - i * 0.5; // Smaller radius, starting from 2.5
+        const radius = 2.5 - i * 0.5;
         const coneGeometry = new THREE.ConeGeometry(radius, layerHeight, 8);
-        coneGeometry.translate(0, 6 + i * layerHeight, 0); // Lower position
+        coneGeometry.translate(0, 6 + i * layerHeight, 0);
         foliageGeometries.push(coneGeometry);
       }
 
-      // Merge All Foliage Layers
       const foliageGeometry = BufferGeometryUtils.mergeGeometries(
         foliageGeometries,
         false
       );
 
-      // Create color attribute for the vertices
       const combinedGeometry = BufferGeometryUtils.mergeGeometries(
         [trunkGeometry, foliageGeometry],
         false
@@ -979,14 +928,12 @@ export default defineComponent({
         return new THREE.BufferGeometry();
       }
 
-      // Create color attribute with darker brown for trunk
       const colors = new Float32Array(
         combinedGeometry.attributes.position.count * 3
       );
-      const trunkColor = new THREE.Color(0x3d1f00); // Darker brown
-      const foliageColor = new THREE.Color(0x1b5e20); // Darker green
+      const trunkColor = new THREE.Color(0x3d1f00);
+      const foliageColor = new THREE.Color(0x1b5e20);
 
-      // First part is trunk vertices, second part is foliage vertices
       const trunkVertCount = trunkGeometry.attributes.position.count;
       for (let i = 0; i < colors.length; i += 3) {
         const color = i < trunkVertCount * 3 ? trunkColor : foliageColor;
@@ -1003,46 +950,47 @@ export default defineComponent({
       return combinedGeometry;
     };
 
-    // Variables for Car Jumping Mechanics
     let verticalVelocity = 0;
     const gravity = -30;
 
-    const makeCarJump = (impactVelocity: number) => {
-      if (verticalVelocity === 0) {
-        // Calculate Jump Strength Based on Impact Velocity
-        const jumpStrength = impactVelocity * 2; // Increased multiplier
-        verticalVelocity = THREE.MathUtils.clamp(jumpStrength, 40, 80); // Adjusted limits
+    const makeCarJump = (jumpStrength: number) => {
+      if (verticalVelocity <= 0.1) {
+        verticalVelocity = THREE.MathUtils.clamp(jumpStrength, 0.1, 50);
+        lastJumpTime = performance.now();
+        if (!jumpAudio) {
+          jumpAudio = new Audio('/assets/sounds/boing.mp3');
+          jumpAudio.volume = 1;
+        }
+        jumpAudio.currentTime = 0;
+        jumpAudio.play().catch((error) => {
+          console.error('Error playing jump sound:', error);
+        });
       }
     };
 
     let prevTime = performance.now();
 
-    // Variables for Car Collision and Movement
     let carBoundingBox = new THREE.Box3();
     const carWidth = 2;
     const carHeight = 1;
     const carDepth = 4;
 
-    // Variables for Ground and Roof Detection
     let onGround = true;
 
     const getGroundHeightAtPosition = (x: number, z: number): number => {
-      let maxY = -1.65; // Default ground level
+      let maxY = -1.65;
 
-      // Check if the car is over any house
       for (let i = 0; i < houseData.length; i++) {
         const house = houseData[i];
         const houseBoundingBox = house.boundingBox;
 
-        // Add a small buffer to ensure the car is fully over the house
-        const buffer = 1.5;
+        const buffer = 1.65;
         if (
           x >= houseBoundingBox.min.x + buffer &&
           x <= houseBoundingBox.max.x - buffer &&
           z >= houseBoundingBox.min.z + buffer &&
           z <= houseBoundingBox.max.z - buffer
         ) {
-          // Car is over this house
           const roofY = houseBoundingBox.max.y;
           if (roofY > maxY) {
             maxY = roofY;
@@ -1050,48 +998,25 @@ export default defineComponent({
         }
       }
 
-      // Check for Pyramids
-      for (let i = 0; i < pyramidData.length; i++) {
-        const pyramidInfo = pyramidData[i];
-        const pyramidBoundingBox = pyramidInfo.boundingBox;
-
-        // Add a small buffer for pyramids as well
-        const buffer = 1;
-        if (
-          x >= pyramidBoundingBox.min.x + buffer &&
-          x <= pyramidBoundingBox.max.x - buffer &&
-          z >= pyramidBoundingBox.min.z + buffer &&
-          z <= pyramidBoundingBox.max.z - buffer
-        ) {
-          const pyramidTopY = pyramidBoundingBox.max.y;
-          if (pyramidTopY > maxY) {
-            maxY = pyramidTopY;
-          }
-        }
-      }
-
       return maxY;
     };
 
-    // Add this with other state variables at the top of the setup function:
     let currentLookTargetY = 0;
     const LOOK_UP_HEIGHT = 3;
     const LOOK_TRANSITION_SPEED = 0.1;
 
     const animate = (time: number) => {
-      const deltaTime = time - prevTime; // Time in milliseconds
+      const deltaTime = time - prevTime;
       prevTime = time;
 
       requestAnimationFrame(animate);
 
       if (showVehicleSelection.value) {
-        // Vehicle Selection Screen Rendering
         if (vehicleSelectionCar) {
-          vehicleSelectionCar.rotation.y += 0.007; // Slow spin
+          vehicleSelectionCar.rotation.y += 0.007;
         }
         renderer.render(vehicleSelectionScene, vehicleSelectionCamera);
       } else {
-        // Game Running or Game Over
         if (
           modelLoaded &&
           car &&
@@ -1100,43 +1025,41 @@ export default defineComponent({
           !showHighScoreInput.value &&
           !showHighScoreList.value
         ) {
-          // Main Game Logic (movement, controls, etc.)
-
-          // Calculate Dynamic Acceleration Based on Current Speed
           const speedFactor = Math.abs(velocity) / MAX_SPEED;
           const accelerationFactor = 1 - speedFactor;
           const currentAcceleration =
             MIN_ACCELERATION +
             (MAX_ACCELERATION - MIN_ACCELERATION) * accelerationFactor;
 
-          // Handle Acceleration and Deceleration
-          if (keys.ArrowUp) {
-            velocity += currentAcceleration * (deltaTime / 1000);
-          }
-          if (keys.ArrowDown) {
-            velocity -= DECELERATION * (deltaTime / 1000);
+          if (onGround) {
+            if (keys.ArrowUp) {
+              velocity += currentAcceleration * (deltaTime / 1000);
+            }
+            if (keys.ArrowDown) {
+              velocity -= DECELERATION * (deltaTime / 1000);
+            }
+
+            if (!keys.ArrowUp && !keys.ArrowDown) {
+              velocity *= FRICTION;
+            }
           }
 
-          // Apply Friction When No Keys Are Pressed
-          if (!keys.ArrowUp && !keys.ArrowDown) {
-            velocity *= FRICTION;
-          }
-
-          // Clamp the Velocity
           velocity = THREE.MathUtils.clamp(
             velocity,
             MAX_REVERSE_SPEED,
             MAX_SPEED
           );
 
-          // Threshold to Stop the Car When Speed Is Very Low
           const velocityThreshold = 0.001;
           if (Math.abs(velocity) < velocityThreshold) {
             velocity = 0;
           }
 
-          // Move the Car Forward or Backward
-          car.translateZ(velocity * (deltaTime / 1000) * 100); // Adjusted multiplier
+          car.translateZ(velocity * (deltaTime / 1000) * 100);
+
+          const deltaPos = car.position.clone().sub(lastCarPosition);
+          const actualSpeed = deltaPos.length() / (deltaTime / 1000);
+          lastCarPosition.copy(car.position);
 
           const minSteerSpeed = Math.PI / 100;
           let steerFactor = 0;
@@ -1144,13 +1067,15 @@ export default defineComponent({
             steerFactor = Math.sign(velocity);
           }
 
-          // Calculate Dynamic Steering Sensitivity Based on Current Speed
-          const steeringSensitivity =
+          let steeringSensitivity =
             MAX_STEERING_SENSITIVITY -
             (MAX_STEERING_SENSITIVITY - MIN_STEERING_SENSITIVITY) * speedFactor;
 
-          // Adjust Rotation Acceleration
-          const baseRotationAcceleration = 0.015; // Slightly reduced base rotation acceleration
+          if (!onGround) {
+            steeringSensitivity *= 0.5;
+          }
+
+          const baseRotationAcceleration = 0.015;
           const dynamicRotationAcceleration =
             baseRotationAcceleration * steeringSensitivity;
 
@@ -1172,13 +1097,12 @@ export default defineComponent({
             angularVelocity = 0;
           }
 
-          angularVelocity = THREE.MathUtils.clamp(angularVelocity, -0.5, 0.5); // Adjusted turning
+          angularVelocity = THREE.MathUtils.clamp(angularVelocity, -0.5, 0.5);
 
           if (steerFactor !== 0) {
-            car.rotation.y += angularVelocity * (deltaTime / 1000) * 30; // Adjusted multiplier
+            car.rotation.y += angularVelocity * (deltaTime / 1000) * 30;
           }
 
-          // Calculate Tilt Angle Based on Speed and Angular Velocity
           let targetTiltAngle = 0;
           if (angularVelocity !== 0 && Math.abs(velocity) > minSteerSpeed) {
             const tiltSpeedFactor = Math.abs(velocity) / MAX_SPEED;
@@ -1186,38 +1110,24 @@ export default defineComponent({
               -MAX_TILT_ANGLE * (angularVelocity / 0.02) * tiltSpeedFactor;
           }
 
-          // Smoothly Interpolate Current Tilt Angle Towards Target Tilt Angle
           currentTiltAngle = THREE.MathUtils.lerp(
             currentTiltAngle,
             targetTiltAngle,
             TILT_LERP_FACTOR
           );
 
-          // Apply Tilt to the Car Model
           car.rotation.z = currentTiltAngle;
 
-          // Calculate Speed in km/h
           const speedInKmH = Math.abs(velocity) * 100;
-
-          // Draw the Speedometer
           drawSpeedometer(speedInKmH);
 
-          // Camera Follow Logic
           const cameraOffset = new THREE.Vector3(0, 5, -10);
-
-          // Rotate the offset to match the car's rotation
           const offset = cameraOffset.clone().applyQuaternion(car.quaternion);
-
-          // Calculate the desired camera position
           const desiredCameraPosition = car.position.clone().add(offset);
 
-          // Adjust interpolation speed based on whether the car is on the ground
-          const interpolationSpeed = onGround ? 0.05 : 0.05; // Looser on ground, tighter in air
-
-          // Smoothly interpolate the camera position
+          const interpolationSpeed = onGround ? 0.05 : 0.05;
           camera.position.lerp(desiredCameraPosition, interpolationSpeed);
 
-          // Calculate target look height with smooth transition
           const targetLookHeight = onGround ? LOOK_UP_HEIGHT : 0;
           currentLookTargetY = THREE.MathUtils.lerp(
             currentLookTargetY,
@@ -1225,17 +1135,13 @@ export default defineComponent({
             LOOK_TRANSITION_SPEED
           );
 
-          // Apply the smoothed look target
           const lookTarget = car.position.clone();
           lookTarget.y += currentLookTargetY;
 
-          // Make the camera look at the calculated target
           camera.lookAt(lookTarget);
 
-          // Update Car's Bounding Box
           carBoundingBox.setFromObject(car);
 
-          // Collision Detection with Houses
           let collidedWithSideOfHouse = false;
 
           for (let i = 0; i < houseData.length; i++) {
@@ -1243,21 +1149,16 @@ export default defineComponent({
             const houseBoundingBox = house.boundingBox;
 
             if (carBoundingBox.intersectsBox(houseBoundingBox)) {
-              // Check if the collision is with the sides or the top
               const carBottomY = carBoundingBox.min.y;
               const carTopY = carBoundingBox.max.y;
               const houseBottomY = houseBoundingBox.min.y;
               const houseTopY = houseBoundingBox.max.y;
 
               if (carBottomY >= houseTopY - 0.1) {
-                // Car is above the house, landing on the roof
-                // Ground height will handle adjusting the car's position
                 continue;
               } else if (carTopY <= houseBottomY + 0.1) {
-                // Car is below the house, ignore
                 continue;
               } else {
-                // Collision with the sides, cause explosion
                 collidedWithSideOfHouse = true;
                 break;
               }
@@ -1268,58 +1169,71 @@ export default defineComponent({
             handleCollision();
           }
 
-          // Collision Detection with Trees
           for (let i = 0; i < treeData.length; i++) {
             const tree = treeData[i];
             const treeBoundingSphere = tree.boundingSphere;
 
             if (carBoundingBox.intersectsSphere(treeBoundingSphere)) {
-              // Check the vertical position
               const carBottomY = carBoundingBox.min.y;
               const carTopY = carBoundingBox.max.y;
               const treeTopY =
                 treeBoundingSphere.center.y + treeBoundingSphere.radius;
 
               if (carBottomY >= treeTopY - 0.1) {
-                // Car is above the tree, passes over it
                 continue;
               } else {
-                // Collision with the tree
                 handleCollision();
                 break;
               }
             }
           }
 
-          // Collision Detection with Collectibles
           for (let i = collectibleData.length - 1; i >= 0; i--) {
             const collectibleInfo = collectibleData[i];
             if (carBoundingBox.intersectsBox(collectibleInfo.boundingBox)) {
-              // Collectible collected
               scene.remove(collectibleInfo.mesh);
               collectibles.splice(i, 1);
               collectibleData.splice(i, 1);
-              score.value += 1;
+              const points = collectibleInfo.isWunderbaum ? 3 : 1;
+              score.value += points;
+
+              if (!snusCollectAudio) {
+                snusCollectAudio = new Audio('/assets/sounds/snus.mp3');
+                snusCollectAudio.volume = 1;
+              }
+              snusCollectAudio.currentTime = 0;
+              snusCollectAudio.play().catch((error) => {
+                console.error('Error playing snus/wunderbaum collect sound:', error);
+              });
             }
           }
 
-          // Collision Detection with Pyramids
           for (let i = 0; i < pyramidData.length; i++) {
             const pyramidInfo = pyramidData[i];
-            // Update bounding box
             pyramidInfo.boundingBox.setFromObject(pyramidInfo.mesh);
+
             if (carBoundingBox.intersectsBox(pyramidInfo.boundingBox)) {
-              // Collision with pyramid detected
-              makeCarJump(Math.abs(velocity));
+              const jumpStrength = Math.max(actualSpeed * 0.5, 5);
+              makeCarJump(jumpStrength);
               break;
             }
           }
 
-          // Apply gravity and vertical movement
-          verticalVelocity += gravity * (deltaTime / 1000);
+          collectibles.forEach((c) => {
+            if (c.userData.isWunderbaum) {
+              c.rotation.y += 0.02;
+            } else {
+              c.rotation.z += 0.01;
+            }
+          });
+
+          const now = performance.now();
+          const timeSinceJump = (now - lastJumpTime) / 1000;
+          const effectiveGravity = timeSinceJump < JUMP_DELAY ? gravity * 0.2 : gravity;
+
+          verticalVelocity += effectiveGravity * (deltaTime / 1000);
           car.position.y += verticalVelocity * (deltaTime / 1000);
 
-          // Determine the ground height at the car's current position
           const groundY = getGroundHeightAtPosition(
             car.position.x,
             car.position.z
@@ -1337,28 +1251,19 @@ export default defineComponent({
             verticalVelocity = 0;
           }
 
-          // Update Timer
           if (!isTimeUp.value) {
-            timeRemaining.value -= deltaTime / 1000; // deltaTime is in milliseconds
+            timeRemaining.value -= deltaTime / 1000;
             if (timeRemaining.value <= 0) {
               timeRemaining.value = 0;
               isTimeUp.value = true;
-              // End the game
               endGame();
             }
           }
         }
 
-        // Update Explosion Animation
-        if (
-          isGameOver.value &&
-          explosionSprite &&
-          explosionStartTime !== null
-        ) {
+        if (isGameOver.value && explosionSprite && explosionStartTime !== null) {
           const elapsed = time - explosionStartTime;
-          const frame = Math.floor(
-            (elapsed / explosionDuration) * totalExplosionFrames
-          );
+          const frame = Math.floor((elapsed / explosionDuration) * totalExplosionFrames);
           if (frame < totalExplosionFrames) {
             const currentColumn = frame % explosionCols;
             const currentRow = Math.floor(frame / explosionCols);
@@ -1366,13 +1271,11 @@ export default defineComponent({
             explosionTexture.offset.x = currentColumn / explosionCols;
             explosionTexture.offset.y = 1 - (currentRow + 1) / explosionRows;
           } else {
-            // After Explosion Animation Ends
             scene.remove(explosionSprite);
             explosionSprite = null;
           }
         }
 
-        // Always Render the Scene
         renderer.render(scene, camera);
       }
     };
@@ -1380,17 +1283,15 @@ export default defineComponent({
     const handleCollision = () => {
       isGameOver.value = true;
 
-      // Play Explosion Sound
       if (!explosionAudio) {
         explosionAudio = new Audio('/assets/sounds/boom.mp3');
-        explosionAudio.volume = 1;
+        explosionAudio.volume = 0.7;
       }
-      explosionAudio.currentTime = 0; // Reset audio to start
+      explosionAudio.currentTime = 0;
       explosionAudio.play().catch((error) => {
         console.error('Error playing explosion sound:', error);
       });
 
-      // Create the Explosion Sprite
       const explosionMaterial = new THREE.SpriteMaterial({
         map: explosionTexture,
         transparent: true,
@@ -1401,30 +1302,24 @@ export default defineComponent({
       explosionSprite.position.copy(car.position);
       explosionSprite.scale.set(25, 25, 2);
 
-      // Adjust Explosion Sprite Position to Be Slightly Closer to the Camera
       const explosionOffset = new THREE.Vector3(-3, 0, 5);
       explosionSprite.position.add(explosionOffset);
 
       scene.add(explosionSprite);
 
-      // Record the Start Time of the Explosion
       explosionStartTime = performance.now();
 
-      // Store the Camera's Current Position
       const cameraPos = camera.position.clone();
       camera.position.copy(cameraPos);
 
-      // Remove the Car from the Scene
       scene.remove(car);
 
-      // Stop the Car's Movement
       velocity = 0;
       angularVelocity = 0;
 
       setTimeout(() => resetGame(false), 1000);
     };
 
-    // Function to Draw the Speedometer
     const drawSpeedometer = (speed: number) => {
       if (!speedometerContext || !speedometerCanvas.value) return;
 
@@ -1435,20 +1330,17 @@ export default defineComponent({
 
       ctx.clearRect(0, 0, width, height);
 
-      // Draw the Speedometer Background
       ctx.beginPath();
       ctx.arc(width / 2, height / 2, width / 2 - 5, 0, 2 * Math.PI);
-      ctx.fillStyle = '#222'; // Dark background for retro look
+      ctx.fillStyle = '#222';
       ctx.fill();
 
-      // Draw the Outer Rim
       ctx.beginPath();
       ctx.arc(width / 2, height / 2, width / 2 - 5, 0, 2 * Math.PI);
       ctx.strokeStyle = '#555';
       ctx.lineWidth = 5;
       ctx.stroke();
 
-      // Draw the Speedometer Ticks
       ctx.strokeStyle = '#ccc';
       ctx.lineWidth = 2;
       const maxSpeed = 200;
@@ -1467,7 +1359,6 @@ export default defineComponent({
         ctx.lineTo(x2, y2);
         ctx.stroke();
 
-        // Draw Speed Labels at Each Tick
         const speedLabel = (i * (maxSpeed / numTicks)).toString();
         const labelX = width / 2 + (width / 2 - 40) * Math.cos(angle);
         const labelY = height / 2 + (height / 2 - 40) * Math.sin(angle) + 5;
@@ -1477,7 +1368,6 @@ export default defineComponent({
         ctx.fillText(speedLabel, labelX, labelY);
       }
 
-      // Draw the Needle
       const needleAngle =
         startAngle + (speed / maxSpeed) * (endAngle - startAngle);
       const needleLength = width / 2 - 40;
@@ -1491,13 +1381,11 @@ export default defineComponent({
       ctx.lineTo(needleX, needleY);
       ctx.stroke();
 
-      // Draw the Center Circle
       ctx.beginPath();
       ctx.arc(width / 2, height / 2, 5, 0, 2 * Math.PI);
       ctx.fillStyle = '#fff';
       ctx.fill();
 
-      // Draw the Speed Text
       ctx.fillStyle = '#fff';
       ctx.font = '12px Arial';
       ctx.textAlign = 'center';
@@ -1508,16 +1396,25 @@ export default defineComponent({
       if (showVehicleSelection.value) {
         if (event.key === 'Enter' && car) {
           event.preventDefault();
-          // Start the Game
           showVehicleSelection.value = false;
           resetGame(true);
-          // Stop Vehicle Selection Music
           if (vehicleSelectionMusic) {
             vehicleSelectionMusic.pause();
             vehicleSelectionMusic.currentTime = 0;
           }
-          // Start Background Music
           playBackgroundMusic();
+        }
+      } else if (showHighScoreInput.value) {
+        // Press enter to submit
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          submitHighScore();
+        }
+      } else if (showHighScoreList.value) {
+        // Press enter to restart game
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          restartGame();
         }
       } else {
         if (event.key in keys) {
@@ -1550,15 +1447,12 @@ export default defineComponent({
         width = containerHeight * aspectRatio;
       }
 
-      // Keep the Renderer Size Fixed to Maintain Pixelation
       renderer.domElement.style.width = `${width}px`;
       renderer.domElement.style.height = `${height}px`;
 
-      // Update Camera Aspect Ratio
       camera.aspect = width / height;
       camera.updateProjectionMatrix();
 
-      // Update Vehicle Selection Camera Aspect Ratio
       if (vehicleSelectionCamera) {
         vehicleSelectionCamera.aspect = width / height;
         vehicleSelectionCamera.updateProjectionMatrix();
@@ -1576,7 +1470,6 @@ export default defineComponent({
       window.addEventListener('resize', handleResize);
       handleResize();
 
-      // Load high scores from localStorage
       const savedScores = JSON.parse(localStorage.getItem('highScores') || '[]');
       highScores.value = savedScores;
     };
@@ -1596,113 +1489,92 @@ export default defineComponent({
       isGameOver.value = false;
       isTimeUp.value = false;
 
-      // Remove Explosion Sprite from Scene
       if (explosionSprite) {
         scene.remove(explosionSprite);
         explosionSprite = null;
       }
       explosionStartTime = null;
 
-      // Reset Ambient Light Intensity to Normal
       ambientLight.intensity = 1;
 
-      // Add the Car Back to the Scene if Not Already There
       if (!scene.children.includes(car)) {
         scene.add(car);
       }
 
-      // Reset Variables
       velocity = 0;
       angularVelocity = 0;
       verticalVelocity = 0;
-      car.position.y = -1.65; // Reset to ground level
+      car.position.y = -1.65;
 
-      // Initial Spawn Position
       if (isInitialSpawn) {
         car.position.set(0, car.position.y, 0);
       } else {
-        // Reset Car's Position to a New Random Position
-        const maxPosition = rows * blockSpacing; // Use rows instead of 10
+        const maxPosition = rows * blockSpacing;
         const randomX = (Math.random() - 0.5) * maxPosition;
         const randomZ = (Math.random() - 0.5) * maxPosition;
         car.position.set(randomX, car.position.y, randomZ);
       }
 
-      // Reset Car's Rotation
       car.rotation.set(0, 0, 0);
+      lastCarPosition.copy(car.position);
     };
 
-    // Function to End the Game When Time Is Up
     const endGame = () => {
       isGameOver.value = true;
       showHighScoreInput.value = true;
-      // Stop the car's movement
       velocity = 0;
       angularVelocity = 0;
     };
 
-    // Function to Submit High Score
     const submitHighScore = () => {
-      // Save the high score
       const newScore = {
         name: playerName.value || 'Anonymous',
         score: score.value,
       };
 
-      // Load existing high scores from localStorage
       const existingScores = JSON.parse(
         localStorage.getItem('highScores') || '[]'
       );
 
-      // Add the new score
       existingScores.push(newScore);
 
-      // Sort the scores descending by score
       existingScores.sort((a: any, b: any) => b.score - a.score);
 
-      // Keep only top 10 scores
       existingScores.splice(10);
 
-      // Save back to localStorage
       localStorage.setItem('highScores', JSON.stringify(existingScores));
 
-      // Update the reactive highScores
       highScores.value = existingScores;
 
-      // Hide the high score input screen and show the high score list
       showHighScoreInput.value = false;
       showHighScoreList.value = true;
     };
 
-    // Function to Restart the Game
     const restartGame = () => {
-      // Reset variables
       isGameOver.value = false;
       isTimeUp.value = false;
       showHighScoreList.value = false;
       timeRemaining.value = 60;
       score.value = 0;
       playerName.value = '';
-      // Reset the game
       resetGame(true);
-      // Remove existing collectibles from the scene
+
       collectibles.forEach((collectible) => {
         scene.remove(collectible);
       });
       collectibles = [];
       collectibleData.splice(0, collectibleData.length);
-      // Remove existing pyramids from the scene
+
       pyramids.forEach((pyramid) => {
         scene.remove(pyramid);
       });
       pyramids = [];
       pyramidData.splice(0, pyramidData.length);
-      // Generate new collectibles and pyramids
+
       generateCollectibles();
       generatePyramids();
     };
 
-    // Play Background Music
     const playBackgroundMusic = () => {
       if (!backgroundAudio) {
         backgroundAudio = new Audio('/assets/sounds/barseback.mp3');
@@ -1714,7 +1586,6 @@ export default defineComponent({
       });
     };
 
-    // Play Vehicle Selection Music
     const playVehicleSelectionMusic = () => {
       if (!vehicleSelectionMusic) {
         vehicleSelectionMusic = new Audio('/assets/sounds/1080.mp3');
@@ -1726,24 +1597,20 @@ export default defineComponent({
       });
     };
 
-    // Start the Game When "Play" is Clicked
     const startGame = () => {
       showOverlay.value = false;
       showVehicleSelection.value = true;
       playVehicleSelectionMusic();
     };
 
-    // Add these with your other refs at the top
     const currentChannel = ref('local');
     let onlineRadio: HTMLAudioElement | null = null;
 
-    // Add this new function
     const toggleRadioChannel = () => {
       if (currentChannel.value === 'local') {
-        // Switch to online radio
         if (!onlineRadio) {
           onlineRadio = new Audio('https://stream.radiogellivare.se/listen/977mhz/radio.mp3');
-          onlineRadio.volume = 1;
+          onlineRadio.volume = 2;
         }
         if (backgroundAudio) {
           backgroundAudio.pause();
@@ -1753,7 +1620,6 @@ export default defineComponent({
         });
         currentChannel.value = 'online';
       } else {
-        // Switch to local music
         if (onlineRadio) {
           onlineRadio.pause();
         }
@@ -1794,28 +1660,29 @@ export default defineComponent({
       }
       window.removeEventListener('resize', handleResize);
 
-      // Stop Background Music
       if (backgroundAudio) {
         backgroundAudio.pause();
         backgroundAudio = null;
       }
 
-      // Stop and Cleanup Explosion Audio
       if (explosionAudio) {
         explosionAudio.pause();
         explosionAudio = null;
       }
 
-      // Stop and Cleanup Vehicle Selection Music
       if (vehicleSelectionMusic) {
         vehicleSelectionMusic.pause();
         vehicleSelectionMusic = null;
       }
 
-      // Add this to cleanup the online radio
       if (onlineRadio) {
         onlineRadio.pause();
         onlineRadio = null;
+      }
+
+      if (snusCollectAudio) {
+        snusCollectAudio.pause();
+        snusCollectAudio = null;
       }
     });
 
@@ -1862,15 +1729,16 @@ export default defineComponent({
 .speedometer-container {
   position: absolute;
   bottom: 5%;
-  right: 5%;
+  right: 22%;
   width: 200px;
   height: 200px;
   pointer-events: none;
+  z-index: 10;
 }
 
 .speedometer-container canvas {
-  width: 100%;
-  height: 100%;
+  width: 120%;
+  height: 120%;
 }
 
 .overlay {
@@ -1901,7 +1769,7 @@ export default defineComponent({
 
 /* Vehicle Selection Overlay Styles */
 .vehicle-selection-overlay {
-  position: fixed;
+  position: absolute;
   top: 0;
   left: 0;
   width: 100%;
@@ -1915,7 +1783,7 @@ export default defineComponent({
 }
 
 .vehicle-stats {
-  position: fixed;
+  position: absolute;
   color: white;
   text-align: center;
   margin-top: 55vh;
@@ -1939,6 +1807,7 @@ export default defineComponent({
     monospace;
   -webkit-font-smoothing: none;
   -moz-osx-font-smoothing: none;
+  z-index: 10;
 }
 
 .timer {
@@ -1950,7 +1819,7 @@ export default defineComponent({
 .score {
   position: absolute;
   top: 10px;
-  left: 10px;
+  left: 20%;
   font-size: 24px;
 }
 
@@ -1967,6 +1836,9 @@ export default defineComponent({
   justify-content: center;
   align-items: center;
   z-index: 20;
+  font-family: 'Press Start 2P', 'VT323', 'Pixelated MS Sans Serif', 'Monaco', monospace;
+  -webkit-font-smoothing: none;
+  -moz-osx-font-smoothing: none;
 }
 
 .high-score-content {
@@ -1979,6 +1851,7 @@ export default defineComponent({
 
 .high-score-content h2 {
   margin-bottom: 20px;
+  font-size: 24px;
 }
 
 .high-score-content input {
@@ -1986,12 +1859,18 @@ export default defineComponent({
   padding: 10px;
   margin-bottom: 10px;
   font-size: 16px;
+  font-family: 'Press Start 2P', 'VT323', 'Pixelated MS Sans Serif', 'Monaco', monospace;
+  -webkit-font-smoothing: none;
+  -moz-osx-font-smoothing: none;
 }
 
 .high-score-content button {
   padding: 10px 20px;
   font-size: 18px;
   cursor: pointer;
+  font-family: 'Press Start 2P', 'VT323', 'Pixelated MS Sans Serif', 'Monaco', monospace;
+  -webkit-font-smoothing: none;
+  -moz-osx-font-smoothing: none;
 }
 
 .high-score-content ol {
@@ -2008,7 +1887,7 @@ export default defineComponent({
 .radio-interface {
   position: absolute;
   bottom: 5%;
-  left: 5%;
+  left: 20%;
   background: rgba(0, 0, 0, 0.8);
   border: 2px solid #444;
   border-radius: 5px;
