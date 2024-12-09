@@ -52,7 +52,7 @@
         <p>Your Score: {{ score }}</p>
         <input v-model="playerName" placeholder="Enter your name" />
         <button @click="submitHighScore">Submit</button>
-        <p>Press Enter to submit</p>
+        <p><br>Press Enter to submit</p>
       </div>
     </div>
     <!-- High Score List Screen -->
