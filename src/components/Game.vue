@@ -1,5 +1,10 @@
 <template>
-  <div class="game-container" ref="gameContainer">
+  <div>
+    <div class="game-container" ref="gameContainer">
+    </div>
+    <div class="tv-overlay">
+      <img src="/assets/images/tv.png" alt="TV Frame" />
+    </div>
     <!-- Initial Overlay -->
     <div v-if="showOverlay" class="overlay">
       <img src="/assets/images/start2.png" alt="Start Screen" class="overlay-image" />
@@ -11,7 +16,7 @@
         <h2>Volvo 940</h2>
         <p>Speed: Very Fast</p>
         <p>Handling: Good</p>
-        <p>Press Enter to select</p>
+        <p><br>Press Enter to select</p>
       </div>
     </div>
 
@@ -27,8 +32,16 @@
     <!-- Radio Interface -->
     <div v-if="!showOverlay && !showVehicleSelection && !showHighScoreInput && !showHighScoreList" class="radio-interface">
       <div class="radio-display">
-        <div class="radio-text">{{ currentChannel === 'local' ? 'BARSEBACK FM' : 'GÄLLIVARE NÄRRADIO' }}</div>
-        <div class="radio-frequency">{{ currentChannel === 'local' ? '98.7 MHz' : '97.7 MHz' }}</div>
+        <div class="radio-text">{{
+          currentChannel === 'local' ? 'BARSEBACK FM' :
+          currentChannel === 'online' ? 'GÄLLIVARE NÄRRADIO' :
+          'FIFA FM'
+        }}</div>
+        <div class="radio-frequency">{{
+          currentChannel === 'local' ? '98.7 MHz' :
+          currentChannel === 'online' ? '97.7 MHz' :
+          '99.9 MHz'
+        }}</div>
       </div>
       <button class="radio-button" @click="toggleRadioChannel">TUNE</button>
     </div>
@@ -52,7 +65,7 @@
           </li>
         </ol>
         <button @click="restartGame">Play Again</button>
-        <p>Press Enter to play again</p>
+        <p><br>Press Enter to play again</p>
       </div>
     </div>
   </div>
@@ -1577,9 +1590,9 @@ export default defineComponent({
 
     const playBackgroundMusic = () => {
       if (!backgroundAudio) {
-        backgroundAudio = new Audio('/assets/sounds/barseback.mp3');
+        backgroundAudio = new Audio('/assets/sounds/time.mp3');
         backgroundAudio.loop = true;
-        backgroundAudio.volume = 0.5;
+        backgroundAudio.volume = 1;
       }
       backgroundAudio.play().catch((error) => {
         console.error('Error playing background music:', error);
@@ -1605,6 +1618,8 @@ export default defineComponent({
 
     const currentChannel = ref('local');
     let onlineRadio: HTMLAudioElement | null = null;
+    let fifaAudio: HTMLAudioElement | null = null;
+    let timeAudio: HTMLAudioElement | null = null;
 
     const toggleRadioChannel = () => {
       if (currentChannel.value === 'local') {
@@ -1619,9 +1634,22 @@ export default defineComponent({
           console.error('Error playing online radio:', error);
         });
         currentChannel.value = 'online';
-      } else {
+      } else if (currentChannel.value === 'online') {
         if (onlineRadio) {
           onlineRadio.pause();
+        }
+        if (!fifaAudio) {
+          fifaAudio = new Audio('/assets/sounds/fifa.mp3');
+          fifaAudio.loop = true;
+          fifaAudio.volume = 0.7;
+        }
+        fifaAudio.play().catch(error => {
+          console.error('Error playing FIFA radio:', error);
+        });
+        currentChannel.value = 'fifa';
+      } else if (currentChannel.value === 'fifa') {
+        if (fifaAudio) {
+          fifaAudio.pause();
         }
         if (backgroundAudio) {
           backgroundAudio.play().catch(error => {
@@ -1629,6 +1657,19 @@ export default defineComponent({
           });
         }
         currentChannel.value = 'local';
+      } else {
+        if (fifaAudio) {
+          fifaAudio.pause();
+        }
+        if (!timeAudio) {
+          timeAudio = new Audio('/assets/sounds/time.mp3');
+          timeAudio.loop = true;
+          timeAudio.volume = 0.7;
+        }
+        timeAudio.play().catch(error => {
+          console.error('Error playing Time radio:', error);
+        });
+        currentChannel.value = 'time';
       }
     };
 
@@ -1684,6 +1725,16 @@ export default defineComponent({
         snusCollectAudio.pause();
         snusCollectAudio = null;
       }
+
+      if (fifaAudio) {
+        fifaAudio.pause();
+        fifaAudio = null;
+      }
+
+      if (timeAudio) {
+        timeAudio.pause();
+        timeAudio = null;
+      }
     });
 
     return {
@@ -1718,6 +1769,31 @@ export default defineComponent({
   width: 100vw;
   height: 100vh;
   overflow: hidden;
+  margin-left: -5rem;
+  /* CRT Effekt */
+  filter: contrast(1.1) saturate(1.1) brightness(1.1);
+  position: relative;
+}
+
+.game-container::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  /* Skapa scanlines-effekt */
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 0.15) 0px,
+    rgba(0, 0, 0, 0.15) 2px,
+    transparent 2px,
+    transparent 4px
+  );
+  pointer-events: none;
+  mix-blend-mode: multiply;
+  opacity: 0.5;
+  z-index: 100000;
 }
 
 .game-container canvas {
@@ -1726,10 +1802,29 @@ export default defineComponent({
   image-rendering: pixelated;
 }
 
+.tv-overlay {
+  position: fixed;
+  top: 3vh;
+  left: 0;
+  width: 105vw;
+  height: 104vh;
+  pointer-events: none;
+  z-index: 100;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.tv-overlay img {
+  width: 150%;
+  height: 150%;
+  object-fit: contain;
+}
+
 .speedometer-container {
   position: absolute;
-  bottom: 5%;
-  right: 22%;
+  bottom: 7%;
+  right: 25%;
   width: 200px;
   height: 200px;
   pointer-events: none;
@@ -1743,10 +1838,10 @@ export default defineComponent({
 
 .overlay {
   position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
+  top: -30rem;
+  left: -41rem;
+  width: 170%;
+  height: 170%;
   background-color: black;
   display: flex;
   flex-direction: column;
@@ -1761,7 +1856,7 @@ export default defineComponent({
 }
 
 .play-button {
-  margin-top: 20px;
+  margin-top: -50vh;
   padding: 10px 20px;
   font-size: 24px;
   cursor: pointer;
@@ -1811,6 +1906,9 @@ export default defineComponent({
 }
 
 .timer {
+  position: absolute;
+  top: 5vh;
+  left: -8vh;
   font-size: 24px;
   text-align: center;
   width: 100%;
@@ -1818,7 +1916,7 @@ export default defineComponent({
 
 .score {
   position: absolute;
-  top: 10px;
+  top: 6vh;
   left: 20%;
   font-size: 24px;
 }
@@ -1886,8 +1984,8 @@ export default defineComponent({
 
 .radio-interface {
   position: absolute;
-  bottom: 5%;
-  left: 20%;
+  bottom: 7%;
+  left: 18%;
   background: rgba(0, 0, 0, 0.8);
   border: 2px solid #444;
   border-radius: 5px;
