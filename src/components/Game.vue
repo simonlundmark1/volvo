@@ -1771,7 +1771,7 @@ export default defineComponent({
   overflow: hidden;
   margin-left: -5rem;
   /* CRT Effekt */
-  filter: contrast(1.1) saturate(1.1) brightness(1.1);
+  filter: contrast(1.1) saturate(1.1) brightness(0.6);
   position: relative;
 }
 
@@ -1838,10 +1838,10 @@ export default defineComponent({
 
 .overlay {
   position: absolute;
-  top: -30rem;
-  left: -41rem;
-  width: 100%;
-  height: 100%;
+  top: -33rem;
+  left: -46rem;
+  width: 105%;
+  height: 105%;
   background-color: black;
   display: flex;
   flex-direction: column;
