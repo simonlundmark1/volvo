@@ -1771,7 +1771,7 @@ export default defineComponent({
   overflow: hidden;
   margin-left: -5rem;
   /* CRT Effekt */
-  filter: contrast(1.1) saturate(1.1) brightness(0.6);
+  filter: contrast(1.1) saturate(1.0) brightness(1.1);
   position: relative;
 }
 
