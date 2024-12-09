@@ -7,7 +7,7 @@
     </div>
     <!-- Initial Overlay -->
     <div v-if="showOverlay" class="overlay">
-      <img src="/assets/images/start2.png" alt="Start Screen" class="overlay-image" />
+      <img src="/assets/images/start3.jpg" alt="Start Screen" class="overlay-image" />
       <button class="play-button" @click="startGame">Play</button>
     </div>
     <!-- Vehicle Selection Screen -->
@@ -972,7 +972,7 @@ export default defineComponent({
         lastJumpTime = performance.now();
         if (!jumpAudio) {
           jumpAudio = new Audio('/assets/sounds/boing.mp3');
-          jumpAudio.volume = 1;
+          jumpAudio.volume = 0.5;
         }
         jumpAudio.currentTime = 0;
         jumpAudio.play().catch((error) => {
@@ -1840,8 +1840,8 @@ export default defineComponent({
   position: absolute;
   top: -30rem;
   left: -41rem;
-  width: 170%;
-  height: 170%;
+  width: 100%;
+  height: 100%;
   background-color: black;
   display: flex;
   flex-direction: column;
@@ -1851,12 +1851,16 @@ export default defineComponent({
 }
 
 .overlay-image {
-  max-width: 100%;
-  max-height: 80%;
+  max-width: 60%;
+  margin-right: 10rem;
+  margin-top: 50%;
+  margin-left: 69%;
 }
 
 .play-button {
-  margin-top: -50vh;
+  position: absolute;
+  margin-left: 70rem;
+  margin-top: 180vh;
   padding: 10px 20px;
   font-size: 24px;
   cursor: pointer;
@@ -1866,7 +1870,7 @@ export default defineComponent({
 .vehicle-selection-overlay {
   position: absolute;
   top: 0;
-  left: 0;
+  left: -3%;
   width: 100%;
   height: 100%;
   background-color: transparent;
