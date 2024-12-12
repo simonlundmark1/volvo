@@ -1,6 +1,15 @@
 <template>
   <div>
-    <div class="game-container" ref="gameContainer">
+    <div class="game-container" ref="gameContainer"></div>
+    <div
+      class="score-display"
+      v-if="scoreDisplayVisible"
+      :style="{
+        top: scoreDisplayPosition.y + 'px',
+        left: scoreDisplayPosition.x + 'px',
+      }"
+    >
+      {{ scoreDisplayValue }}
     </div>
     <div class="tv-overlay">
       <img src="/assets/images/tv.png" alt="TV Frame" />
@@ -25,23 +34,37 @@
       <canvas ref="speedometerCanvas" width="200" height="200"></canvas>
     </div>
     <!-- HUD (Heads-Up Display) -->
-    <div v-if="!showOverlay && !showVehicleSelection && !showHighScoreInput && !showHighScoreList" class="hud">
+    <div
+      v-if="!showOverlay && !showVehicleSelection && !showHighScoreInput && !showHighScoreList"
+      class="hud"
+    >
       <div class="timer">Time: {{ Math.ceil(timeRemaining) }}</div>
       <div class="score">Score: {{ score }}</div>
     </div>
     <!-- Radio Interface -->
-    <div v-if="!showOverlay && !showVehicleSelection && !showHighScoreInput && !showHighScoreList" class="radio-interface">
+    <div
+      v-if="!showOverlay && !showVehicleSelection && !showHighScoreInput && !showHighScoreList"
+      class="radio-interface"
+    >
       <div class="radio-display">
-        <div class="radio-text">{{
-          currentChannel === 'local' ? 'BARSEBACK FM' :
-          currentChannel === 'online' ? 'GÄLLIVARE NÄRRADIO' :
-          'FIFA FM'
-        }}</div>
-        <div class="radio-frequency">{{
-          currentChannel === 'local' ? '98.7 MHz' :
-          currentChannel === 'online' ? '97.7 MHz' :
-          '99.9 MHz'
-        }}</div>
+        <div class="radio-text">
+          {{
+            currentChannel === 'local'
+              ? 'BARSEBACK FM'
+              : currentChannel === 'online'
+                ? 'GÄLLIVARE NÄRRADIO'
+                : 'FIFA FM'
+          }}
+        </div>
+        <div class="radio-frequency">
+          {{
+            currentChannel === 'local'
+              ? '98.7 MHz'
+              : currentChannel === 'online'
+                ? '97.7 MHz'
+                : '99.9 MHz'
+          }}
+        </div>
       </div>
       <button class="radio-button" @click="toggleRadioChannel">TUNE</button>
     </div>
@@ -140,8 +163,8 @@ export default defineComponent({
 
     const RENDERER_WIDTH = 480;
     const RENDERER_HEIGHT = 360;
-    const rows = 10;
-    const columns = 10;
+    const rows = 20; // Increased map rows
+    const columns = 20; // Increased map columns
     const blockSize = 60;
     const roadWidth = 15;
     const blockSpacing = blockSize + roadWidth;
@@ -219,7 +242,7 @@ export default defineComponent({
 
       ctx.clearRect(0, 0, size, size);
 
-      const cx = size/2;
+      const cx = size / 2;
       ctx.fillStyle = '#228B22'; // Forest green
 
       ctx.beginPath();
@@ -234,7 +257,7 @@ export default defineComponent({
 
       ctx.save();
       ctx.translate(cx + 30, 160);
-      ctx.rotate(Math.PI/2);
+      ctx.rotate(Math.PI / 2);
       ctx.fillStyle = '#000';
       ctx.font = 'bold 16px Arial';
       ctx.fillText('WUNDERBAUM', 0, 0);
@@ -333,10 +356,10 @@ export default defineComponent({
           75,
           RENDERER_WIDTH / RENDERER_HEIGHT,
           0.1,
-          10000
+          10000 // Increased far clipping plane to match map size
         )
       );
-      camera.position.set(0, 5, 10);
+      camera.position.set(0, 5, 15); // Adjusted initial camera position
       camera.lookAt(0, 0, 0);
 
       renderer = markRaw(
@@ -478,7 +501,6 @@ export default defineComponent({
       const roofGeometry = new THREE.PlaneGeometry(10, 10);
       roofGeometry.rotateX(-Math.PI / 2);
       roofGeometry.translate(0, 10, 0);
-
       const combinedHouseGeometry = BufferGeometryUtils.mergeGeometries(
         [houseGeometry, roofGeometry],
         false
@@ -488,15 +510,16 @@ export default defineComponent({
         map: houseTexture,
       });
 
-      let totalHouses = 0;
-      let totalTrees = 0;
+        let totalHouses = 0;
+        let totalTrees = 0;
 
-      for (let row = 0; row < rows; row++) {
-        for (let col = 0; col < columns; col++) {
-          totalHouses += Math.floor(Math.random() * 3) + 1;
-          totalTrees += Math.floor(Math.random() * 15) + 20;
+        for (let row = 0; row < rows; row++) {
+            for (let col = 0; col < columns; col++) {
+                totalHouses += Math.floor(Math.random() * 3) + 1;
+                totalTrees += Math.floor(Math.random() * 15) + 20;
+            }
         }
-      }
+
 
       const houseInstancedMesh = new THREE.InstancedMesh(
         combinedHouseGeometry,
@@ -738,10 +761,6 @@ export default defineComponent({
 
     let pyramids: (THREE.Mesh | THREE.Group)[] = [];
 
-    const oldGenerateCollectibles = () => {
-      // not used
-    };
-
     const generateCollectibles = () => {
       const collectibleGeometry = new THREE.CylinderGeometry(1, 1, 0.5, 32);
       const collectibleTexture = createSnusTexture();
@@ -753,16 +772,16 @@ export default defineComponent({
         collectibleTopBottomMaterial
       ];
 
-      const numCollectibles = 50;
-      const numCollectiblesOnRoofs = 30;
+      const numCollectibles = 120;
+      const numCollectiblesOnRoofs = 60;
       const numCollectiblesOnRoads = numCollectibles - numCollectiblesOnRoofs;
 
       for (let i = 0; i < numCollectiblesOnRoads; i++) {
         const collectible = new THREE.Mesh(collectibleGeometry, collectibleMaterials);
         collectible.rotation.x = Math.PI / 2;
 
-        const randomRow = Math.floor(Math.random() * 10);
-        const randomCol = Math.floor(Math.random() * 10);
+        const randomRow = Math.floor(Math.random() * rows);
+        const randomCol = Math.floor(Math.random() * columns);
 
         const roadX = randomCol * (60 + 15) - (60 + 15) / 2;
         const roadZ = randomRow * (60 + 15) - (60 + 15) / 2;
@@ -828,1204 +847,1260 @@ export default defineComponent({
       }
 
       const texture = new THREE.CanvasTexture(canvas);
-      texture.wrapS = THREE.RepeatWrapping;
-      texture.wrapT = THREE.RepeatWrapping;
-      texture.minFilter = THREE.LinearFilter;
-      texture.magFilter = THREE.LinearFilter;
-      texture.needsUpdate = true;
-      return texture;
-    };
+      texture.
+      wrapS = THREE.RepeatWrapping;
+texture.wrapT = THREE.RepeatWrapping;
+texture.minFilter = THREE.LinearFilter;
+texture.magFilter = THREE.LinearFilter;
+texture.needsUpdate = true;
+return texture;
+};
+function generatePyramids() {
+  const topRadius = 3;
+  const bottomRadius = 6;
+  const height = 2;
 
-    function generatePyramids() {
-      const topRadius = 3;
-      const bottomRadius = 6;
-      const height = 2;
+  const sideTexture = createCheckerTexture();
+  const sideMaterial = new THREE.MeshBasicMaterial({ map: sideTexture });
+  const topMaterial = new THREE.MeshBasicMaterial({ color: 0x808080 });
+  const bottomMaterial = new THREE.MeshBasicMaterial({ color: 0x808080 });
 
-      const sideTexture = createCheckerTexture();
-      const sideMaterial = new THREE.MeshBasicMaterial({ map: sideTexture });
-      const topMaterial = new THREE.MeshBasicMaterial({ color: 0x808080 });
-      const bottomMaterial = new THREE.MeshBasicMaterial({ color: 0x808080 });
+  const createSpeedBump = (): THREE.Mesh => {
+    const geometry = new THREE.CylinderGeometry(topRadius, bottomRadius, height, 4, 1, false);
+    const materials = [sideMaterial, topMaterial, bottomMaterial];
+    const mesh = new THREE.Mesh(geometry, materials);
+    mesh.rotation.x = 0;
+    return mesh;
+  };
 
-      const createSpeedBump = (): THREE.Mesh => {
-        const geometry = new THREE.CylinderGeometry(topRadius, bottomRadius, height, 4, 1, false);
-        const materials = [sideMaterial, topMaterial, bottomMaterial];
-        const mesh = new THREE.Mesh(geometry, materials);
-        mesh.rotation.x = 0;
-        return mesh;
-      };
+  const numSpeedBumps = 100;
+  const numOnRoofs = 30;
+  const numOnGround = numSpeedBumps - numOnRoofs;
 
-      const numSpeedBumps = 40;
-      const numOnRoofs = 10;
-      const numOnGround = numSpeedBumps - numOnRoofs;
+  for (let i = 0; i < numOnGround; i++) {
+    const bump = createSpeedBump();
 
-      for (let i = 0; i < numOnGround; i++) {
-        const bump = createSpeedBump();
+    const randomRow = Math.floor(Math.random() * (rows + 1));
+    const randomCol = Math.floor(Math.random() * (columns + 1));
+    const isHorizontal = Math.random() < 0.5;
+    let posX, posZ;
 
-        const randomRow = Math.floor(Math.random() * (rows + 1));
-        const randomCol = Math.floor(Math.random() * (columns + 1));
-        const isHorizontal = Math.random() < 0.5;
-        let posX, posZ;
-
-        if (isHorizontal) {
-          posZ = randomRow * blockSpacing - blockSpacing / 2;
-          posX = (columns * blockSpacing) / 2 - blockSpacing / 2;
-          posX += (Math.random() - 0.5) * (columns * blockSpacing);
-          posX = THREE.MathUtils.clamp(posX, 0, columns * blockSpacing - blockSpacing);
-        } else {
-          posX = randomCol * blockSpacing - blockSpacing / 2;
-          posZ = (rows * blockSpacing) / 2 - blockSpacing / 2;
-          posZ += (Math.random() - 0.5) * (rows * blockSpacing);
-          posZ = THREE.MathUtils.clamp(posZ, 0, rows * blockSpacing - blockSpacing);
-        }
-
-        bump.position.set(posX, 0, posZ);
-        scene.add(bump);
-        pyramids.push(bump);
-
-        const boundingBox = new THREE.Box3().setFromObject(bump);
-        pyramidData.push({ mesh: bump, boundingBox });
-      }
-
-      for (let i = 0; i < numOnRoofs; i++) {
-        const bump = createSpeedBump();
-        const randomHouseIndex = Math.floor(Math.random() * houseData.length);
-        const house = houseData[randomHouseIndex];
-        const houseBoundingBox = house.boundingBox;
-
-        const roofMinX = houseBoundingBox.min.x + 1;
-        const roofMaxX = houseBoundingBox.max.x - 1;
-        const roofMinZ = houseBoundingBox.min.z + 1;
-        const roofMaxZ = houseBoundingBox.max.z - 1;
-
-        const bumpX = THREE.MathUtils.lerp(roofMinX, roofMaxX, Math.random());
-        const bumpZ = THREE.MathUtils.lerp(roofMinZ, roofMaxZ, Math.random());
-        const roofY = houseBoundingBox.max.y;
-
-        bump.position.set(bumpX, roofY, bumpZ);
-        scene.add(bump);
-        pyramids.push(bump);
-
-        const boundingBox = new THREE.Box3().setFromObject(bump);
-        pyramidData.push({ mesh: bump, boundingBox });
-      }
+    if (isHorizontal) {
+      posZ = randomRow * blockSpacing - blockSpacing / 2;
+      posX = (columns * blockSpacing) / 2 - blockSpacing / 2;
+      posX += (Math.random() - 0.5) * (columns * blockSpacing);
+      posX = THREE.MathUtils.clamp(posX, 0, columns * blockSpacing - blockSpacing);
+    } else {
+      posX = randomCol * blockSpacing - blockSpacing / 2;
+      posZ = (rows * blockSpacing) / 2 - blockSpacing / 2;
+      posZ += (Math.random() - 0.5) * (rows * blockSpacing);
+      posZ = THREE.MathUtils.clamp(posZ, 0, rows * blockSpacing - blockSpacing);
     }
 
-    const createPineTreeGeometry = (): THREE.BufferGeometry => {
-      const trunkGeometry = new THREE.CylinderGeometry(0.4, 0.4, 6, 8);
-      trunkGeometry.translate(0, 3, 0);
+    bump.position.set(posX, 0, posZ);
+    scene.add(bump);
+    pyramids.push(bump);
 
-      const foliageGeometries: THREE.BufferGeometry[] = [];
-      const numLayers = 4;
-      const foliageHeight = 12;
-      const layerHeight = foliageHeight / numLayers;
+    const boundingBox = new THREE.Box3().setFromObject(bump);
+    pyramidData.push({ mesh: bump, boundingBox });
+  }
 
-      for (let i = 0; i < numLayers; i++) {
-        const radius = 2.5 - i * 0.5;
-        const coneGeometry = new THREE.ConeGeometry(radius, layerHeight, 8);
-        coneGeometry.translate(0, 6 + i * layerHeight, 0);
-        foliageGeometries.push(coneGeometry);
+  for (let i = 0; i < numOnRoofs; i++) {
+    const bump = createSpeedBump();
+    const randomHouseIndex = Math.floor(Math.random() * houseData.length);
+    const house = houseData[randomHouseIndex];
+    const houseBoundingBox = house.boundingBox;
+
+    const roofMinX = houseBoundingBox.min.x + 1;
+    const roofMaxX = houseBoundingBox.max.x - 1;
+    const roofMinZ = houseBoundingBox.min.z + 1;
+    const roofMaxZ = houseBoundingBox.max.z - 1;
+
+    const bumpX = THREE.MathUtils.lerp(roofMinX, roofMaxX, Math.random());
+    const bumpZ = THREE.MathUtils.lerp(roofMinZ, roofMaxZ, Math.random());
+    const roofY = houseBoundingBox.max.y;
+
+    bump.position.set(bumpX, roofY, bumpZ);
+    scene.add(bump);
+    pyramids.push(bump);
+
+    const boundingBox = new THREE.Box3().setFromObject(bump);
+    pyramidData.push({ mesh: bump, boundingBox });
+  }
+}
+
+const createPineTreeGeometry = (): THREE.BufferGeometry => {
+  const trunkGeometry = new THREE.CylinderGeometry(0.4, 0.4, 6, 8);
+  trunkGeometry.translate(0, 3, 0);
+
+  const foliageGeometries: THREE.BufferGeometry[] = [];
+  const numLayers = 4;
+  const foliageHeight = 12;
+  const layerHeight = foliageHeight / numLayers;
+
+  for (let i = 0; i < numLayers; i++) {
+    const radius = 2.5 - i * 0.5;
+    const coneGeometry = new THREE.ConeGeometry(radius, layerHeight, 8);
+    coneGeometry.translate(0, 6 + i * layerHeight, 0);
+    foliageGeometries.push(coneGeometry);
+  }
+
+  const foliageGeometry = BufferGeometryUtils.mergeGeometries(
+    foliageGeometries,
+    false
+  );
+
+  const combinedGeometry = BufferGeometryUtils.mergeGeometries(
+    [trunkGeometry, foliageGeometry],
+    false
+  );
+
+  if (!combinedGeometry) {
+    console.error('Failed to merge tree geometries');
+    return new THREE.BufferGeometry();
+  }
+
+  const colors = new Float32Array(
+    combinedGeometry.attributes.position.count * 3
+  );
+  const trunkColor = new THREE.Color(0x3d1f00);
+  const foliageColor = new THREE.Color(0x1b5e20);
+
+  const trunkVertCount = trunkGeometry.attributes.position.count;
+  for (let i = 0; i < colors.length; i += 3) {
+    const color = i < trunkVertCount * 3 ? trunkColor : foliageColor;
+    colors[i] = color.r;
+    colors[i + 1] = color.g;
+    colors[i + 2] = color.b;
+  }
+
+  combinedGeometry.setAttribute(
+    'color',
+    new THREE.BufferAttribute(colors, 3)
+  );
+
+  return combinedGeometry;
+};
+
+let verticalVelocity = 0;
+const gravity = -30;
+
+const makeCarJump = (jumpStrength: number) => {
+  if (verticalVelocity <= 0.1) {
+    verticalVelocity = THREE.MathUtils.clamp(jumpStrength, 0.1, 50);
+    lastJumpTime = performance.now();
+    if (!jumpAudio) {
+      jumpAudio = new Audio('/assets/sounds/boing.mp3');
+      jumpAudio.volume = 0.5;
+    }
+    jumpAudio.currentTime = 0;
+    jumpAudio.play().catch((error) => {
+      console.error('Error playing jump sound:', error);
+    });
+  }
+};
+
+let prevTime = performance.now();
+
+let carBoundingBox = new THREE.Box3();
+const carWidth = 2;
+const carHeight = 1;
+const carDepth = 4;
+
+let onGround = true;
+
+const getGroundHeightAtPosition = (x: number, z: number): number => {
+  let maxY = -1.65;
+
+  for (let i = 0; i < houseData.length; i++) {
+    const house = houseData[i];
+    const houseBoundingBox = house.boundingBox;
+
+      const buffer = 1.65;
+    if (
+      x >= houseBoundingBox.min.x + buffer &&
+      x <= houseBoundingBox.max.x - buffer &&
+      z >= houseBoundingBox.min.z + buffer &&
+      z <= houseBoundingBox.max.z - buffer
+    ) {
+      const roofY = houseBoundingBox.max.y;
+      if (roofY > maxY) {
+        maxY = roofY;
       }
+    }
+  }
 
-      const foliageGeometry = BufferGeometryUtils.mergeGeometries(
-        foliageGeometries,
-        false
-      );
+    return maxY;
+};
 
-      const combinedGeometry = BufferGeometryUtils.mergeGeometries(
-        [trunkGeometry, foliageGeometry],
-        false
-      );
+  let currentLookTargetY = 0;
+const LOOK_UP_HEIGHT = 3;
+const LOOK_TRANSITION_SPEED = 0.1;
 
-      if (!combinedGeometry) {
-        console.error('Failed to merge tree geometries');
-        return new THREE.BufferGeometry();
-      }
+  function worldToScreen(position: THREE.Vector3, camera: THREE.Camera, renderer: THREE.WebGLRenderer): { x: number; y: number } {
+      const width = renderer.domElement.clientWidth;
+      const height = renderer.domElement.clientHeight;
 
-      const colors = new Float32Array(
-        combinedGeometry.attributes.position.count * 3
-      );
-      const trunkColor = new THREE.Color(0x3d1f00);
-      const foliageColor = new THREE.Color(0x1b5e20);
+      const proj = position.project(camera);
+      const x = (proj.x * 0.5 + 0.5) * width;
+      const y = (-proj.y * 0.5 + 0.5) * height;
 
-      const trunkVertCount = trunkGeometry.attributes.position.count;
-      for (let i = 0; i < colors.length; i += 3) {
-        const color = i < trunkVertCount * 3 ? trunkColor : foliageColor;
-        colors[i] = color.r;
-        colors[i + 1] = color.g;
-        colors[i + 2] = color.b;
-      }
+      return { x, y };
+  }
 
-      combinedGeometry.setAttribute(
-        'color',
-        new THREE.BufferAttribute(colors, 3)
-      );
+const animate = (time: number) => {
+  const deltaTime = time - prevTime;
+  prevTime = time;
 
-      return combinedGeometry;
-    };
+  requestAnimationFrame(animate);
 
-    let verticalVelocity = 0;
-    const gravity = -30;
+  if (showVehicleSelection.value) {
+    if (vehicleSelectionCar) {
+      vehicleSelectionCar.rotation.y += 0.007;
+    }
+    renderer.render(vehicleSelectionScene, vehicleSelectionCamera);
+  } else {
+    if (
+      modelLoaded &&
+      car &&
+      !isGameOver.value &&
+      !showOverlay.value &&
+      !showHighScoreInput.value &&
+      !showHighScoreList.value
+    ) {
+          // Calculate speed factor for dynamic acceleration and handling
+      const speedFactor = Math.abs(velocity) / MAX_SPEED;
+      const accelerationFactor = 1 - speedFactor;
+      const currentAcceleration =
+          MIN_ACCELERATION +
+          (MAX_ACCELERATION - MIN_ACCELERATION) * accelerationFactor;
 
-    const makeCarJump = (jumpStrength: number) => {
-      if (verticalVelocity <= 0.1) {
-        verticalVelocity = THREE.MathUtils.clamp(jumpStrength, 0.1, 50);
-        lastJumpTime = performance.now();
-        if (!jumpAudio) {
-          jumpAudio = new Audio('/assets/sounds/boing.mp3');
-          jumpAudio.volume = 0.5;
+      if (onGround) {
+        if (keys.ArrowUp) {
+          velocity += currentAcceleration * (deltaTime / 1000);
         }
-        jumpAudio.currentTime = 0;
-        jumpAudio.play().catch((error) => {
-          console.error('Error playing jump sound:', error);
-        });
-      }
-    };
+        if (keys.ArrowDown) {
+          velocity -= DECELERATION * (deltaTime / 1000);
+        }
 
-    let prevTime = performance.now();
-
-    let carBoundingBox = new THREE.Box3();
-    const carWidth = 2;
-    const carHeight = 1;
-    const carDepth = 4;
-
-    let onGround = true;
-
-    const getGroundHeightAtPosition = (x: number, z: number): number => {
-      let maxY = -1.65;
-
-      for (let i = 0; i < houseData.length; i++) {
-        const house = houseData[i];
-        const houseBoundingBox = house.boundingBox;
-
-        const buffer = 1.65;
-        if (
-          x >= houseBoundingBox.min.x + buffer &&
-          x <= houseBoundingBox.max.x - buffer &&
-          z >= houseBoundingBox.min.z + buffer &&
-          z <= houseBoundingBox.max.z - buffer
-        ) {
-          const roofY = houseBoundingBox.max.y;
-          if (roofY > maxY) {
-            maxY = roofY;
-          }
+        if (!keys.ArrowUp && !keys.ArrowDown) {
+          velocity *= FRICTION;
         }
       }
 
-      return maxY;
-    };
+       velocity = THREE.MathUtils.clamp(
+        velocity,
+        MAX_REVERSE_SPEED,
+        MAX_SPEED
+      );
 
-    let currentLookTargetY = 0;
-    const LOOK_UP_HEIGHT = 3;
-    const LOOK_TRANSITION_SPEED = 0.1;
+      const velocityThreshold = 0.001;
+      if (Math.abs(velocity) < velocityThreshold) {
+        velocity = 0;
+      }
 
-    const animate = (time: number) => {
-      const deltaTime = time - prevTime;
-      prevTime = time;
+      car.translateZ(velocity * (deltaTime / 1000) * 100);
 
-      requestAnimationFrame(animate);
+      const deltaPos = car.position.clone().sub(lastCarPosition);
+      const actualSpeed = deltaPos.length() / (deltaTime / 1000);
+      lastCarPosition.copy(car.position);
 
-      if (showVehicleSelection.value) {
-        if (vehicleSelectionCar) {
-          vehicleSelectionCar.rotation.y += 0.007;
-        }
-        renderer.render(vehicleSelectionScene, vehicleSelectionCamera);
-      } else {
-        if (
-          modelLoaded &&
-          car &&
-          !isGameOver.value &&
-          !showOverlay.value &&
-          !showHighScoreInput.value &&
-          !showHighScoreList.value
-        ) {
-          const speedFactor = Math.abs(velocity) / MAX_SPEED;
-          const accelerationFactor = 1 - speedFactor;
-          const currentAcceleration =
-            MIN_ACCELERATION +
-            (MAX_ACCELERATION - MIN_ACCELERATION) * accelerationFactor;
-
-          if (onGround) {
-            if (keys.ArrowUp) {
-              velocity += currentAcceleration * (deltaTime / 1000);
-            }
-            if (keys.ArrowDown) {
-              velocity -= DECELERATION * (deltaTime / 1000);
-            }
-
-            if (!keys.ArrowUp && !keys.ArrowDown) {
-              velocity *= FRICTION;
-            }
-          }
-
-          velocity = THREE.MathUtils.clamp(
-            velocity,
-            MAX_REVERSE_SPEED,
-            MAX_SPEED
-          );
-
-          const velocityThreshold = 0.001;
-          if (Math.abs(velocity) < velocityThreshold) {
-            velocity = 0;
-          }
-
-          car.translateZ(velocity * (deltaTime / 1000) * 100);
-
-          const deltaPos = car.position.clone().sub(lastCarPosition);
-          const actualSpeed = deltaPos.length() / (deltaTime / 1000);
-          lastCarPosition.copy(car.position);
-
-          const minSteerSpeed = Math.PI / 100;
-          let steerFactor = 0;
-          if (Math.abs(velocity) > minSteerSpeed) {
+      const minSteerSpeed = Math.PI / 100;
+      let steerFactor = 0;
+       if (Math.abs(velocity) > minSteerSpeed) {
             steerFactor = Math.sign(velocity);
+        }
+
+
+      let steeringSensitivity =
+        MAX_STEERING_SENSITIVITY -
+        (MAX_STEERING_SENSITIVITY - MIN_STEERING_SENSITIVITY) * speedFactor;
+
+      if (!onGround) {
+        steeringSensitivity *= 0.5;
+      }
+
+        const baseRotationAcceleration = 0.015;
+        const dynamicRotationAcceleration = baseRotationAcceleration * steeringSensitivity;
+
+      if (steerFactor !== 0) {
+          if (keys.ArrowLeft) {
+            angularVelocity += dynamicRotationAcceleration * steerFactor;
           }
-
-          let steeringSensitivity =
-            MAX_STEERING_SENSITIVITY -
-            (MAX_STEERING_SENSITIVITY - MIN_STEERING_SENSITIVITY) * speedFactor;
-
-          if (!onGround) {
-            steeringSensitivity *= 0.5;
+          if (keys.ArrowRight) {
+            angularVelocity -= dynamicRotationAcceleration * steerFactor;
           }
+       } else {
+           angularVelocity = 0;
+        }
 
-          const baseRotationAcceleration = 0.015;
-          const dynamicRotationAcceleration =
-            baseRotationAcceleration * steeringSensitivity;
+      angularVelocity *= rotationDamping;
 
-          if (steerFactor !== 0) {
-            if (keys.ArrowLeft) {
-              angularVelocity += dynamicRotationAcceleration * steerFactor;
-            }
-            if (keys.ArrowRight) {
-              angularVelocity -= dynamicRotationAcceleration * steerFactor;
-            }
-          } else {
+        const angularThreshold = 0.0001;
+        if (Math.abs(angularVelocity) < angularThreshold) {
             angularVelocity = 0;
-          }
+        }
 
-          angularVelocity *= rotationDamping;
+      angularVelocity = THREE.MathUtils.clamp(angularVelocity, -0.5, 0.5);
 
-          const angularThreshold = 0.0001;
-          if (Math.abs(angularVelocity) < angularThreshold) {
-            angularVelocity = 0;
-          }
-
-          angularVelocity = THREE.MathUtils.clamp(angularVelocity, -0.5, 0.5);
-
-          if (steerFactor !== 0) {
+        if (steerFactor !== 0) {
             car.rotation.y += angularVelocity * (deltaTime / 1000) * 30;
-          }
+        }
 
-          let targetTiltAngle = 0;
-          if (angularVelocity !== 0 && Math.abs(velocity) > minSteerSpeed) {
+        let targetTiltAngle = 0;
+        if (angularVelocity !== 0 && Math.abs(velocity) > minSteerSpeed) {
             const tiltSpeedFactor = Math.abs(velocity) / MAX_SPEED;
-            targetTiltAngle =
-              -MAX_TILT_ANGLE * (angularVelocity / 0.02) * tiltSpeedFactor;
-          }
+          targetTiltAngle =
+            -MAX_TILT_ANGLE * (angularVelocity / 0.02) * tiltSpeedFactor;
+        }
 
-          currentTiltAngle = THREE.MathUtils.lerp(
-            currentTiltAngle,
-            targetTiltAngle,
-            TILT_LERP_FACTOR
-          );
 
-          car.rotation.z = currentTiltAngle;
+      currentTiltAngle = THREE.MathUtils.lerp(
+        currentTiltAngle,
+        targetTiltAngle,
+        TILT_LERP_FACTOR
+      );
 
-          const speedInKmH = Math.abs(velocity) * 100;
-          drawSpeedometer(speedInKmH);
+      car.rotation.z = currentTiltAngle;
 
-          const cameraOffset = new THREE.Vector3(0, 5, -10);
-          const offset = cameraOffset.clone().applyQuaternion(car.quaternion);
-          const desiredCameraPosition = car.position.clone().add(offset);
+      const speedInKmH = Math.abs(velocity) * 100;
+      drawSpeedometer(speedInKmH);
 
-          const interpolationSpeed = onGround ? 0.05 : 0.05;
-          camera.position.lerp(desiredCameraPosition, interpolationSpeed);
+        const cameraOffset = new THREE.Vector3(0, 5, -10);
+        const offset = cameraOffset.clone().applyQuaternion(car.quaternion);
+        const desiredCameraPosition = car.position.clone().add(offset);
+        const interpolationSpeed = onGround ? 0.05 : 0.05; // Slower interpolation if the car is jumping
 
-          const targetLookHeight = onGround ? LOOK_UP_HEIGHT : 0;
-          currentLookTargetY = THREE.MathUtils.lerp(
-            currentLookTargetY,
-            targetLookHeight,
-            LOOK_TRANSITION_SPEED
-          );
+        camera.position.lerp(desiredCameraPosition, interpolationSpeed);
 
-          const lookTarget = car.position.clone();
-          lookTarget.y += currentLookTargetY;
+      const targetLookHeight = onGround ? LOOK_UP_HEIGHT : 0;
+      currentLookTargetY = THREE.MathUtils.lerp(
+        currentLookTargetY,
+        targetLookHeight,
+        LOOK_TRANSITION_SPEED
+      );
 
-          camera.lookAt(lookTarget);
+      const lookTarget = car.position.clone();
+      lookTarget.y += currentLookTargetY;
 
-          carBoundingBox.setFromObject(car);
+      camera.lookAt(lookTarget);
 
-          let collidedWithSideOfHouse = false;
+        carBoundingBox.setFromObject(car);
 
-          for (let i = 0; i < houseData.length; i++) {
-            const house = houseData[i];
-            const houseBoundingBox = house.boundingBox;
+      let collidedWithSideOfHouse = false;
+
+        for (let i = 0; i < houseData.length; i++) {
+          const house = houseData[i];
+          const houseBoundingBox = house.boundingBox;
 
             if (carBoundingBox.intersectsBox(houseBoundingBox)) {
-              const carBottomY = carBoundingBox.min.y;
-              const carTopY = carBoundingBox.max.y;
-              const houseBottomY = houseBoundingBox.min.y;
-              const houseTopY = houseBoundingBox.max.y;
+                const carBottomY = carBoundingBox.min.y;
+                const carTopY = carBoundingBox.max.y;
+                const houseBottomY = houseBoundingBox.min.y;
+                const houseTopY = houseBoundingBox.max.y;
 
-              if (carBottomY >= houseTopY - 0.1) {
-                continue;
-              } else if (carTopY <= houseBottomY + 0.1) {
-                continue;
-              } else {
+                 if (carBottomY >= houseTopY - 0.1) {
+                    continue;
+                } else if (carTopY <= houseBottomY + 0.1) {
+                    continue;
+                }
+              else {
                 collidedWithSideOfHouse = true;
                 break;
               }
             }
-          }
+        }
 
-          if (collidedWithSideOfHouse) {
-            handleCollision();
-          }
+      if (collidedWithSideOfHouse) {
+        handleCollision();
+      }
 
-          for (let i = 0; i < treeData.length; i++) {
-            const tree = treeData[i];
-            const treeBoundingSphere = tree.boundingSphere;
+        for (let i = 0; i < treeData.length; i++) {
+          const tree = treeData[i];
+          const treeBoundingSphere = tree.boundingSphere;
 
             if (carBoundingBox.intersectsSphere(treeBoundingSphere)) {
-              const carBottomY = carBoundingBox.min.y;
-              const carTopY = carBoundingBox.max.y;
-              const treeTopY =
-                treeBoundingSphere.center.y + treeBoundingSphere.radius;
+                  const carBottomY = carBoundingBox.min.y;
+                const carTopY = carBoundingBox.max.y;
+                const treeTopY =
+                    treeBoundingSphere.center.y + treeBoundingSphere.radius;
 
-              if (carBottomY >= treeTopY - 0.1) {
-                continue;
-              } else {
-                handleCollision();
-                break;
-              }
+                 if (carBottomY >= treeTopY - 0.1) {
+                    continue;
+                  } else {
+                    handleCollision();
+                    break;
+                }
             }
-          }
+      }
 
-          for (let i = collectibleData.length - 1; i >= 0; i--) {
-            const collectibleInfo = collectibleData[i];
-            if (carBoundingBox.intersectsBox(collectibleInfo.boundingBox)) {
-              scene.remove(collectibleInfo.mesh);
-              collectibles.splice(i, 1);
-              collectibleData.splice(i, 1);
-              const points = collectibleInfo.isWunderbaum ? 3 : 1;
-              score.value += points;
 
-              if (!snusCollectAudio) {
+      for (let i = collectibleData.length - 1; i >= 0; i--) {
+        const collectibleInfo = collectibleData[i];
+          if (carBoundingBox.intersectsBox(collectibleInfo.boundingBox)) {
+          scene.remove(collectibleInfo.mesh);
+          collectibles.splice(i, 1);
+          collectibleData.splice(i, 1);
+          const points = collectibleInfo.isWunderbaum ? 3 : 1;
+          score.value += points;
+
+            if (!snusCollectAudio) {
                 snusCollectAudio = new Audio('/assets/sounds/snus.mp3');
                 snusCollectAudio.volume = 1;
-              }
-              snusCollectAudio.currentTime = 0;
-              snusCollectAudio.play().catch((error) => {
+            }
+            snusCollectAudio.currentTime = 0;
+            snusCollectAudio.play().catch((error) => {
                 console.error('Error playing snus/wunderbaum collect sound:', error);
-              });
-            }
-          }
+            });
 
-          for (let i = 0; i < pyramidData.length; i++) {
+          // Show the score above the car
+          const screenPos = worldToScreen(car.position.clone(), camera, renderer);
+          showScoreDisplay(points, screenPos);
+
+        }
+      }
+
+        for (let i = 0; i < pyramidData.length; i++) {
             const pyramidInfo = pyramidData[i];
-            pyramidInfo.boundingBox.setFromObject(pyramidInfo.mesh);
-
+             pyramidInfo.boundingBox.setFromObject(pyramidInfo.mesh);
             if (carBoundingBox.intersectsBox(pyramidInfo.boundingBox)) {
-              const jumpStrength = Math.max(actualSpeed * 0.5, 5);
-              makeCarJump(jumpStrength);
-              break;
-            }
+                const jumpStrength = Math.max(actualSpeed * 0.5, 5);
+                makeCarJump(jumpStrength);
+                break;
           }
+        }
 
-          collectibles.forEach((c) => {
-            if (c.userData.isWunderbaum) {
-              c.rotation.y += 0.02;
-            } else {
-              c.rotation.z += 0.01;
-            }
-          });
+      collectibles.forEach((c) => {
+        if (c.userData.isWunderbaum) {
+          c.rotation.y += 0.02;
+        } else {
+          c.rotation.z += 0.01;
+        }
+      });
 
-          const now = performance.now();
-          const timeSinceJump = (now - lastJumpTime) / 1000;
-          const effectiveGravity = timeSinceJump < JUMP_DELAY ? gravity * 0.2 : gravity;
 
-          verticalVelocity += effectiveGravity * (deltaTime / 1000);
-          car.position.y += verticalVelocity * (deltaTime / 1000);
+        const now = performance.now();
+      const timeSinceJump = (now - lastJumpTime) / 1000;
+      const effectiveGravity = timeSinceJump < JUMP_DELAY ? gravity * 0.2 : gravity;
 
-          const groundY = getGroundHeightAtPosition(
-            car.position.x,
-            car.position.z
-          );
+      verticalVelocity += effectiveGravity * (deltaTime / 1000);
+      car.position.y += verticalVelocity * (deltaTime / 1000);
 
-          if (car.position.y - carHeight / 2 < groundY) {
-            car.position.y = groundY + carHeight / 2;
-            verticalVelocity = 0;
-            onGround = true;
-          } else if (car.position.y - carHeight / 2 > groundY - 1) {
-            onGround = false;
-          } else {
-            onGround = true;
-            car.position.y = groundY + carHeight / 2;
-            verticalVelocity = 0;
-          }
 
-          if (!isTimeUp.value) {
+      const groundY = getGroundHeightAtPosition(
+        car.position.x,
+        car.position.z
+      );
+
+      if (car.position.y - carHeight / 2 < groundY) {
+        car.position.y = groundY + carHeight / 2;
+        verticalVelocity = 0;
+        onGround = true;
+      } else if (car.position.y - carHeight / 2 > groundY - 1) {
+        onGround = false;
+      } else {
+          onGround = true;
+          car.position.y = groundY + carHeight / 2;
+          verticalVelocity = 0;
+        }
+
+
+        if (!isTimeUp.value) {
             timeRemaining.value -= deltaTime / 1000;
             if (timeRemaining.value <= 0) {
-              timeRemaining.value = 0;
-              isTimeUp.value = true;
-              endGame();
+                timeRemaining.value = 0;
+                isTimeUp.value = true;
+                endGame();
             }
-          }
-        }
-
-        if (isGameOver.value && explosionSprite && explosionStartTime !== null) {
-          const elapsed = time - explosionStartTime;
-          const frame = Math.floor((elapsed / explosionDuration) * totalExplosionFrames);
-          if (frame < totalExplosionFrames) {
-            const currentColumn = frame % explosionCols;
-            const currentRow = Math.floor(frame / explosionCols);
-
-            explosionTexture.offset.x = currentColumn / explosionCols;
-            explosionTexture.offset.y = 1 - (currentRow + 1) / explosionRows;
-          } else {
-            scene.remove(explosionSprite);
-            explosionSprite = null;
-          }
-        }
-
-        renderer.render(scene, camera);
       }
-    };
+    }
 
-    const handleCollision = () => {
-      isGameOver.value = true;
 
-      if (!explosionAudio) {
-        explosionAudio = new Audio('/assets/sounds/boom.mp3');
-        explosionAudio.volume = 0.7;
-      }
-      explosionAudio.currentTime = 0;
-      explosionAudio.play().catch((error) => {
-        console.error('Error playing explosion sound:', error);
-      });
+    if (isGameOver.value && explosionSprite && explosionStartTime !== null) {
+        const elapsed = time - explosionStartTime;
+        const frame = Math.floor((elapsed / explosionDuration) * totalExplosionFrames);
+      if (frame < totalExplosionFrames) {
+        const currentColumn = frame % explosionCols;
+        const currentRow = Math.floor(frame / explosionCols);
 
-      const explosionMaterial = new THREE.SpriteMaterial({
-        map: explosionTexture,
-        transparent: true,
-        depthTest: false,
-        depthWrite: false,
-      });
-      explosionSprite = new THREE.Sprite(explosionMaterial);
-      explosionSprite.position.copy(car.position);
-      explosionSprite.scale.set(25, 25, 2);
-
-      const explosionOffset = new THREE.Vector3(-3, 0, 5);
-      explosionSprite.position.add(explosionOffset);
-
-      scene.add(explosionSprite);
-
-      explosionStartTime = performance.now();
-
-      const cameraPos = camera.position.clone();
-      camera.position.copy(cameraPos);
-
-      scene.remove(car);
-
-      velocity = 0;
-      angularVelocity = 0;
-
-      setTimeout(() => resetGame(false), 1000);
-    };
-
-    const drawSpeedometer = (speed: number) => {
-      if (!speedometerContext || !speedometerCanvas.value) return;
-
-      const ctx = speedometerContext;
-      const canvas = speedometerCanvas.value;
-      const width = (canvas.width = 200);
-      const height = (canvas.height = 200);
-
-      ctx.clearRect(0, 0, width, height);
-
-      ctx.beginPath();
-      ctx.arc(width / 2, height / 2, width / 2 - 5, 0, 2 * Math.PI);
-      ctx.fillStyle = '#222';
-      ctx.fill();
-
-      ctx.beginPath();
-      ctx.arc(width / 2, height / 2, width / 2 - 5, 0, 2 * Math.PI);
-      ctx.strokeStyle = '#555';
-      ctx.lineWidth = 5;
-      ctx.stroke();
-
-      ctx.strokeStyle = '#ccc';
-      ctx.lineWidth = 2;
-      const maxSpeed = 200;
-      const numTicks = 10;
-      const startAngle = 0.8 * Math.PI;
-      const endAngle = 2.2 * Math.PI;
-
-      for (let i = 0; i <= numTicks; i++) {
-        const angle = startAngle + (i / numTicks) * (endAngle - startAngle);
-        const x1 = width / 2 + (width / 2 - 20) * Math.cos(angle);
-        const y1 = height / 2 + (height / 2 - 20) * Math.sin(angle);
-        const x2 = width / 2 + (width / 2 - 30) * Math.cos(angle);
-        const y2 = height / 2 + (height / 2 - 30) * Math.sin(angle);
-        ctx.beginPath();
-        ctx.moveTo(x1, y1);
-        ctx.lineTo(x2, y2);
-        ctx.stroke();
-
-        const speedLabel = (i * (maxSpeed / numTicks)).toString();
-        const labelX = width / 2 + (width / 2 - 40) * Math.cos(angle);
-        const labelY = height / 2 + (height / 2 - 40) * Math.sin(angle) + 5;
-        ctx.fillStyle = '#fff';
-        ctx.font = '10px Arial';
-        ctx.textAlign = 'center';
-        ctx.fillText(speedLabel, labelX, labelY);
-      }
-
-      const needleAngle =
-        startAngle + (speed / maxSpeed) * (endAngle - startAngle);
-      const needleLength = width / 2 - 40;
-      const needleX = width / 2 + needleLength * Math.cos(needleAngle);
-      const needleY = height / 2 + needleLength * Math.sin(needleAngle);
-
-      ctx.strokeStyle = 'red';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(width / 2, height / 2);
-      ctx.lineTo(needleX, needleY);
-      ctx.stroke();
-
-      ctx.beginPath();
-      ctx.arc(width / 2, height / 2, 5, 0, 2 * Math.PI);
-      ctx.fillStyle = '#fff';
-      ctx.fill();
-
-      ctx.fillStyle = '#fff';
-      ctx.font = '12px Arial';
-      ctx.textAlign = 'center';
-      ctx.fillText(`${Math.round(speed)} km/h`, width / 2, height / 2 + 30);
-    };
-
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (showVehicleSelection.value) {
-        if (event.key === 'Enter' && car) {
-          event.preventDefault();
-          showVehicleSelection.value = false;
-          resetGame(true);
-          if (vehicleSelectionMusic) {
-            vehicleSelectionMusic.pause();
-            vehicleSelectionMusic.currentTime = 0;
-          }
-          playBackgroundMusic();
-        }
-      } else if (showHighScoreInput.value) {
-        // Press enter to submit
-        if (event.key === 'Enter') {
-          event.preventDefault();
-          submitHighScore();
-        }
-      } else if (showHighScoreList.value) {
-        // Press enter to restart game
-        if (event.key === 'Enter') {
-          event.preventDefault();
-          restartGame();
-        }
+        explosionTexture.offset.x = currentColumn / explosionCols;
+        explosionTexture.offset.y = 1 - (currentRow + 1) / explosionRows;
       } else {
-        if (event.key in keys) {
-          event.preventDefault();
-          keys[event.key] = true;
-        }
-      }
-    };
-
-    const onKeyUp = (event: KeyboardEvent) => {
-      if (event.key in keys) {
-        event.preventDefault();
-        keys[event.key] = false;
-      }
-    };
-
-    const handleResize = () => {
-      const container = gameContainer.value;
-      if (!container) return;
-
-      const containerWidth = container.clientWidth;
-      const containerHeight = container.clientHeight;
-      const aspectRatio = RENDERER_WIDTH / RENDERER_HEIGHT;
-
-      let width = containerWidth;
-      let height = containerWidth / aspectRatio;
-
-      if (height > containerHeight) {
-        height = containerHeight;
-        width = containerHeight * aspectRatio;
-      }
-
-      renderer.domElement.style.width = `${width}px`;
-      renderer.domElement.style.height = `${height}px`;
-
-      camera.aspect = width / height;
-      camera.updateProjectionMatrix();
-
-      if (vehicleSelectionCamera) {
-        vehicleSelectionCamera.aspect = width / height;
-        vehicleSelectionCamera.updateProjectionMatrix();
-      }
-    };
-
-    const onMountedHandler = () => {
-      window.addEventListener('keydown', onKeyDown);
-      window.addEventListener('keyup', onKeyUp);
-
-      if (gameContainer.value) {
-        initScene();
-        initVehicleSelectionScene();
-      }
-      window.addEventListener('resize', handleResize);
-      handleResize();
-
-      const savedScores = JSON.parse(localStorage.getItem('highScores') || '[]');
-      highScores.value = savedScores;
-    };
-
-    watch(
-      () => speedometerCanvas.value,
-      (newCanvas) => {
-        if (newCanvas) {
-          speedometerContext = newCanvas.getContext('2d');
-        }
-      }
-    );
-
-    const resetGame = (isInitialSpawn = false) => {
-      if (!car) return;
-
-      isGameOver.value = false;
-      isTimeUp.value = false;
-
-      if (explosionSprite) {
         scene.remove(explosionSprite);
         explosionSprite = null;
       }
-      explosionStartTime = null;
+    }
 
-      ambientLight.intensity = 1;
+    renderer.render(scene, camera);
+  }
+};
 
-      if (!scene.children.includes(car)) {
-        scene.add(car);
-      }
+const handleCollision = () => {
+  isGameOver.value = true;
 
-      velocity = 0;
-      angularVelocity = 0;
-      verticalVelocity = 0;
-      car.position.y = -1.65;
+  if (!explosionAudio) {
+    explosionAudio = new Audio('/assets/sounds/boom.mp3');
+    explosionAudio.volume = 0.7;
+  }
+  explosionAudio.currentTime = 0;
+  explosionAudio.play().catch((error) => {
+    console.error('Error playing explosion sound:', error);
+  });
 
-      if (isInitialSpawn) {
-        car.position.set(0, car.position.y, 0);
-      } else {
-        const maxPosition = rows * blockSpacing;
-        const randomX = (Math.random() - 0.5) * maxPosition;
-        const randomZ = (Math.random() - 0.5) * maxPosition;
-        car.position.set(randomX, car.position.y, randomZ);
-      }
+  const explosionMaterial = new THREE.SpriteMaterial({
+    map: explosionTexture,
+    transparent: true,
+    depthTest: false,
+    depthWrite: false,
+  });
+  explosionSprite = new THREE.Sprite(explosionMaterial);
+  explosionSprite.position.copy(car.position);
+  explosionSprite.scale.set(25, 25, 2);
 
-      car.rotation.set(0, 0, 0);
-      lastCarPosition.copy(car.position);
-    };
+  const explosionOffset = new THREE.Vector3(-3, 0, 5);
+  explosionSprite.position.add(explosionOffset);
 
-    const endGame = () => {
-      isGameOver.value = true;
-      showHighScoreInput.value = true;
-      velocity = 0;
-      angularVelocity = 0;
-    };
+  scene.add(explosionSprite);
 
-    const submitHighScore = () => {
-      const newScore = {
-        name: playerName.value || 'Anonymous',
-        score: score.value,
-      };
+  explosionStartTime = performance.now();
 
-      const existingScores = JSON.parse(
-        localStorage.getItem('highScores') || '[]'
-      );
+    const cameraPos = camera.position.clone();
+  camera.position.copy(cameraPos);
 
-      existingScores.push(newScore);
+  scene.remove(car);
 
-      existingScores.sort((a: any, b: any) => b.score - a.score);
+    velocity = 0;
+    angularVelocity = 0;
 
-      existingScores.splice(10);
+    setTimeout(() => resetGame(false), 1000);
+};
 
-      localStorage.setItem('highScores', JSON.stringify(existingScores));
+const drawSpeedometer = (speed: number) => {
+  if (!speedometerContext || !speedometerCanvas.value) return;
 
-      highScores.value = existingScores;
+  const ctx = speedometerContext;
+  const canvas = speedometerCanvas.value;
+  const width = (canvas.width = 200);
+  const height = (canvas.height = 200);
 
-      showHighScoreInput.value = false;
-      showHighScoreList.value = true;
-    };
+  ctx.clearRect(0, 0, width, height);
 
-    const restartGame = () => {
-      isGameOver.value = false;
-      isTimeUp.value = false;
-      showHighScoreList.value = false;
-      timeRemaining.value = 60;
-      score.value = 0;
-      playerName.value = '';
+  ctx.beginPath();
+  ctx.arc(width / 2, height / 2, width / 2 - 5, 0, 2 * Math.PI);
+  ctx.fillStyle = '#222';
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.arc(width / 2, height / 2, width / 2 - 5, 0, 2 * Math.PI);
+  ctx.strokeStyle = '#555';
+  ctx.lineWidth = 5;
+  ctx.stroke();
+
+  ctx.strokeStyle = '#ccc';
+  ctx.lineWidth = 2;
+  const maxSpeed = 200;
+  const numTicks = 10;
+  const startAngle = 0.8 * Math.PI;
+  const endAngle = 2.2 * Math.PI;
+
+  for (let i = 0; i <= numTicks; i++) {
+    const angle = startAngle + (i / numTicks) * (endAngle - startAngle);
+    const x1 = width / 2 + (width / 2 - 20) * Math.cos(angle);
+    const y1 = height / 2 + (height / 2 - 20) * Math.sin(angle);
+    const x2 = width / 2 + (width / 2 - 30) * Math.cos(angle);
+    const y2 = height / 2 + (height / 2 - 30) * Math.sin(angle);
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+
+    const speedLabel = (i * (maxSpeed / numTicks)).toString();
+    const labelX = width / 2 + (width / 2 - 40) * Math.cos(angle);
+    const labelY = height / 2 + (height / 2 - 40) * Math.sin(angle) + 5;
+    ctx.fillStyle = '#fff';
+    ctx.font = '10px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText(speedLabel, labelX, labelY);
+  }
+
+  const needleAngle =
+    startAngle + (speed / maxSpeed) * (endAngle - startAngle);
+  const needleLength = width / 2 - 40;
+  const needleX = width / 2 + needleLength * Math.cos(needleAngle);
+  const needleY = height / 2 + needleLength * Math.sin(needleAngle);
+
+  ctx.strokeStyle = 'red';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(width / 2, height / 2);
+  ctx.lineTo(needleX, needleY);
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.arc(width / 2, height / 2, 5, 0, 2 * Math.PI);
+  ctx.fillStyle = '#fff';
+  ctx.fill();
+
+  ctx.fillStyle = '#fff';
+  ctx.font = '12px Arial';
+  ctx.textAlign = 'center';
+  ctx.fillText(`${Math.round(speed)} km/h`, width / 2, height / 2 + 30);
+};
+
+const onKeyDown = (event: KeyboardEvent) => {
+  if (showVehicleSelection.value) {
+    if (event.key === 'Enter' && car) {
+      event.preventDefault();
+      showVehicleSelection.value = false;
       resetGame(true);
-
-      collectibles.forEach((collectible) => {
-        scene.remove(collectible);
-      });
-      collectibles = [];
-      collectibleData.splice(0, collectibleData.length);
-
-      pyramids.forEach((pyramid) => {
-        scene.remove(pyramid);
-      });
-      pyramids = [];
-      pyramidData.splice(0, pyramidData.length);
-
-      generateCollectibles();
-      generatePyramids();
-    };
-
-    const playBackgroundMusic = () => {
-      if (!backgroundAudio) {
-        backgroundAudio = new Audio('/assets/sounds/time.mp3');
-        backgroundAudio.loop = true;
-        backgroundAudio.volume = 1;
-      }
-      backgroundAudio.play().catch((error) => {
-        console.error('Error playing background music:', error);
-      });
-    };
-
-    const playVehicleSelectionMusic = () => {
-      if (!vehicleSelectionMusic) {
-        vehicleSelectionMusic = new Audio('/assets/sounds/1080.mp3');
-        vehicleSelectionMusic.loop = true;
-        vehicleSelectionMusic.volume = 0.7;
-      }
-      vehicleSelectionMusic.play().catch((error) => {
-        console.error('Error playing vehicle selection music:', error);
-      });
-    };
-
-    const startGame = () => {
-      showOverlay.value = false;
-      showVehicleSelection.value = true;
-      playVehicleSelectionMusic();
-    };
-
-    const currentChannel = ref('local');
-    let onlineRadio: HTMLAudioElement | null = null;
-    let fifaAudio: HTMLAudioElement | null = null;
-    let timeAudio: HTMLAudioElement | null = null;
-
-    const toggleRadioChannel = () => {
-      if (currentChannel.value === 'local') {
-        if (!onlineRadio) {
-          onlineRadio = new Audio('https://stream.radiogellivare.se/listen/977mhz/radio.mp3');
-          onlineRadio.volume = 2;
-        }
-        if (backgroundAudio) {
-          backgroundAudio.pause();
-        }
-        onlineRadio.play().catch(error => {
-          console.error('Error playing online radio:', error);
-        });
-        currentChannel.value = 'online';
-      } else if (currentChannel.value === 'online') {
-        if (onlineRadio) {
-          onlineRadio.pause();
-        }
-        if (!fifaAudio) {
-          fifaAudio = new Audio('/assets/sounds/fifa.mp3');
-          fifaAudio.loop = true;
-          fifaAudio.volume = 0.7;
-        }
-        fifaAudio.play().catch(error => {
-          console.error('Error playing FIFA radio:', error);
-        });
-        currentChannel.value = 'fifa';
-      } else if (currentChannel.value === 'fifa') {
-        if (fifaAudio) {
-          fifaAudio.pause();
-        }
-        if (backgroundAudio) {
-          backgroundAudio.play().catch(error => {
-            console.error('Error playing background music:', error);
-          });
-        }
-        currentChannel.value = 'local';
-      } else {
-        if (fifaAudio) {
-          fifaAudio.pause();
-        }
-        if (!timeAudio) {
-          timeAudio = new Audio('/assets/sounds/time.mp3');
-          timeAudio.loop = true;
-          timeAudio.volume = 0.7;
-        }
-        timeAudio.play().catch(error => {
-          console.error('Error playing Time radio:', error);
-        });
-        currentChannel.value = 'time';
-      }
-    };
-
-    onMounted(onMountedHandler);
-
-    onBeforeUnmount(() => {
-      window.removeEventListener('keydown', onKeyDown);
-      window.removeEventListener('keyup', onKeyUp);
-
-      if (renderer) {
-        renderer.dispose();
-        renderer.forceContextLoss();
-        renderer.domElement.remove();
-      }
-
-      if (scene) {
-        scene.traverse((object) => {
-          if (object instanceof THREE.Mesh) {
-            if (object.geometry) object.geometry.dispose();
-            if (object.material) {
-              if (Array.isArray(object.material)) {
-                object.material.forEach((material) => material.dispose());
-              } else {
-                object.material.dispose();
-              }
-            }
-          }
-        });
-      }
-      window.removeEventListener('resize', handleResize);
-
-      if (backgroundAudio) {
-        backgroundAudio.pause();
-        backgroundAudio = null;
-      }
-
-      if (explosionAudio) {
-        explosionAudio.pause();
-        explosionAudio = null;
-      }
-
       if (vehicleSelectionMusic) {
         vehicleSelectionMusic.pause();
-        vehicleSelectionMusic = null;
+        vehicleSelectionMusic.currentTime = 0;
       }
+      playBackgroundMusic();
+    }
+  } else if (showHighScoreInput.value) {
+    // Press enter to submit
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      submitHighScore();
+    }
+  } else if (showHighScoreList.value) {
+    // Press enter to restart game
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      restartGame();
+    }
+  } else {
+    if (event.key in keys) {
+      event.preventDefault();
+      keys[event.key] = true;
+    }
+  }
+};
 
-      if (onlineRadio) {
-        onlineRadio.pause();
-        onlineRadio = null;
+const onKeyUp = (event: KeyboardEvent) => {
+  if (event.key in keys) {
+    event.preventDefault();
+    keys[event.key] = false;
+  }
+};
+
+const handleResize = () => {
+  const container = gameContainer.value;
+  if (!container) return;
+
+  const containerWidth = container.clientWidth;
+  const containerHeight = container.clientHeight;
+  const aspectRatio = RENDERER_WIDTH / RENDERER_HEIGHT;
+
+  let width = containerWidth;
+  let height = containerWidth / aspectRatio;
+
+  if (height > containerHeight) {
+    height = containerHeight;
+    width = containerHeight * aspectRatio;
+  }
+
+  renderer.domElement.style.width = `${width}px`;
+  renderer.domElement.style.height = `${height}px`;
+
+  camera.aspect = width / height;
+  camera.updateProjectionMatrix();
+
+  if (vehicleSelectionCamera) {
+    vehicleSelectionCamera.aspect = width / height;
+    vehicleSelectionCamera.updateProjectionMatrix();
+  }
+};
+
+const onMountedHandler = () => {
+  window.addEventListener('keydown', onKeyDown);
+  window.addEventListener('keyup', onKeyUp);
+
+  if (gameContainer.value) {
+    initScene();
+    initVehicleSelectionScene();
+  }
+  window.addEventListener('resize', handleResize);
+  handleResize();
+
+  const savedScores = JSON.parse(localStorage.getItem('highScores') || '[]');
+  highScores.value = savedScores;
+};
+
+watch(
+  () => speedometerCanvas.value,
+  (newCanvas) => {
+    if (newCanvas) {
+      speedometerContext = newCanvas.getContext('2d');
+    }
+  }
+);
+
+const resetGame = (isInitialSpawn = false) => {
+  if (!car) return;
+
+  isGameOver.value = false;
+  isTimeUp.value = false;
+
+    if (explosionSprite) {
+        scene.remove(explosionSprite);
+        explosionSprite = null;
+    }
+    explosionStartTime = null;
+
+    ambientLight.intensity = 1;
+
+  if (!scene.children.includes(car)) {
+      scene.add(car);
+  }
+
+
+  velocity = 0;
+  angularVelocity = 0;
+  verticalVelocity = 0;
+  car.position.y = -1.65;
+
+  if (isInitialSpawn) {
+      car.position.set(0, car.position.y, 0);
+  } else {
+      const maxPosition = rows * blockSpacing;
+      const randomX = (Math.random() - 0.5) * maxPosition;
+      const randomZ = (Math.random() - 0.5) * maxPosition;
+        car.position.set(randomX, car.position.y, randomZ);
+    }
+
+
+    car.rotation.set(0, 0, 0);
+  lastCarPosition.copy(car.position);
+};
+
+const endGame = () => {
+  isGameOver.value = true;
+  showHighScoreInput.value = true;
+  velocity = 0;
+    angularVelocity = 0;
+};
+
+const submitHighScore = () => {
+  const newScore = {
+    name: playerName.value || 'Anonymous',
+    score: score.value,
+  };
+
+  const existingScores = JSON.parse(
+    localStorage.getItem('highScores') || '[]'
+  );
+
+  existingScores.push(newScore);
+
+  existingScores.sort((a: any, b: any) => b.score - a.score);
+
+  existingScores.splice(10);
+
+  localStorage.setItem('highScores', JSON.stringify(existingScores));
+
+  highScores.value = existingScores;
+
+  showHighScoreInput.value = false;
+  showHighScoreList.value = true;
+};
+
+const restartGame = () => {
+  isGameOver.value = false;
+  isTimeUp.value = false;
+  showHighScoreList.value = false;
+  timeRemaining.value = 60;
+  score.value = 0;
+  playerName.value = '';
+  resetGame(true);
+
+    collectibles.forEach((collectible) => {
+      scene.remove(collectible);
+    });
+    collectibles = [];
+    collectibleData.splice(0, collectibleData.length);
+
+
+  pyramids.forEach((pyramid) => {
+        scene.remove(pyramid);
+    });
+    pyramids = [];
+    pyramidData.splice(0, pyramidData.length);
+
+  generateCollectibles();
+  generatePyramids();
+};
+
+const playBackgroundMusic = () => {
+  if (!backgroundAudio) {
+    backgroundAudio = new Audio('/assets/sounds/time.mp3');
+    backgroundAudio.loop = true;
+    backgroundAudio.volume = 1;
+  }
+  backgroundAudio.play().catch((error) => {
+    console.error('Error playing background music:', error);
+  });
+};
+
+const playVehicleSelectionMusic = () => {
+  if (!vehicleSelectionMusic) {
+    vehicleSelectionMusic = new Audio('/assets/sounds/1080.mp3');
+    vehicleSelectionMusic.loop = true;
+      vehicleSelectionMusic.volume = 0.7;
+  }
+  vehicleSelectionMusic.play().catch((error) => {
+    console.error('Error playing vehicle selection music:', error);
+  });
+};
+
+const startGame = () => {
+  showOverlay.value = false;
+  showVehicleSelection.value = true;
+  playVehicleSelectionMusic();
+};
+
+const currentChannel = ref('local');
+let onlineRadio: HTMLAudioElement | null = null;
+let fifaAudio: HTMLAudioElement | null = null;
+let timeAudio: HTMLAudioElement | null = null;
+
+const toggleRadioChannel = () => {
+  if (currentChannel.value === 'local') {
+      if (!onlineRadio) {
+      onlineRadio = new Audio('https://stream.radiogellivare.se/listen/977mhz/radio.mp3');
+      onlineRadio.volume = 2;
       }
-
-      if (snusCollectAudio) {
-        snusCollectAudio.pause();
-        snusCollectAudio = null;
+      if(backgroundAudio) {
+          backgroundAudio.pause();
       }
-
+    onlineRadio.play().catch(error => {
+      console.error('Error playing online radio:', error);
+    });
+    currentChannel.value = 'online';
+  } else if (currentChannel.value === 'online') {
+    if (onlineRadio) {
+      onlineRadio.pause();
+    }
+      if (!fifaAudio) {
+        fifaAudio = new Audio('/assets/sounds/fifa.mp3');
+        fifaAudio.loop = true;
+          fifaAudio.volume = 0.7;
+    }
+      fifaAudio.play().catch(error => {
+          console.error('Error playing FIFA radio:', error);
+      });
+    currentChannel.value = 'fifa';
+  } else if (currentChannel.value === 'fifa') {
       if (fifaAudio) {
         fifaAudio.pause();
-        fifaAudio = null;
       }
+      if(backgroundAudio){
+          backgroundAudio.play().catch(error => {
+              console.error('Error playing background music:', error);
+          });
+      }
+    currentChannel.value = 'local';
+  } else {
+        if (fifaAudio) {
+          fifaAudio.pause();
+        }
+      if (!timeAudio) {
+        timeAudio = new Audio('/assets/sounds/barseback.mp3');
+        timeAudio.loop = true;
+          timeAudio.volume = 0.7;
+      }
+      timeAudio.play().catch(error => {
+        console.error('Error playing Time radio:', error);
+      });
+      currentChannel.value = 'time';
+  }
+};
 
-      if (timeAudio) {
-        timeAudio.pause();
-        timeAudio = null;
+const scoreDisplayVisible = ref(false);
+const scoreDisplayValue = ref('');
+const scoreDisplayPosition = ref({ x: 0, y: 0 });
+
+const showScoreDisplay = (value: number, screenPosition: {x: number; y: number}) => {
+  scoreDisplayValue.value = `+${value}`;
+    // Show a bit above the car
+    scoreDisplayPosition.value = { x: screenPosition.x, y: screenPosition.y - 50 };
+  scoreDisplayVisible.value = true;
+
+  // Hide the score display after a short duration
+  setTimeout(() => {
+    scoreDisplayVisible.value = false;
+  }, 1000); // Display for 1 second
+};
+
+onMounted(onMountedHandler);
+
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onKeyDown);
+  window.removeEventListener('keyup', onKeyUp);
+
+  if (renderer) {
+    renderer.dispose();
+    renderer.forceContextLoss();
+    renderer.domElement.remove();
+  }
+
+  if (scene) {
+    scene.traverse((object) => {
+      if (object instanceof THREE.Mesh) {
+        if (object.geometry) object.geometry.dispose();
+        if (object.material) {
+          if (Array.isArray(object.material)) {
+            object.material.forEach((material) => material.dispose());
+          } else {
+            object.material.dispose();
+          }
+        }
       }
     });
+  }
+  window.removeEventListener('resize', handleResize);
 
-    return {
-      gameContainer,
-      speedometerCanvas,
-      isGameOver,
-      showOverlay,
-      startGame,
-      showVehicleSelection,
-      timeRemaining,
-      score,
-      showHighScoreInput,
-      playerName,
-      highScores,
-      showHighScoreList,
-      submitHighScore,
-      restartGame,
-      currentChannel,
-      toggleRadioChannel,
-    };
-  },
+  if (backgroundAudio) {
+      backgroundAudio.pause();
+    backgroundAudio = null;
+  }
+
+  if (explosionAudio) {
+      explosionAudio.pause();
+      explosionAudio = null;
+  }
+
+  if (vehicleSelectionMusic) {
+    vehicleSelectionMusic.pause();
+    vehicleSelectionMusic = null;
+  }
+
+  if (onlineRadio) {
+    onlineRadio.pause();
+    onlineRadio = null;
+  }
+
+  if (snusCollectAudio) {
+    snusCollectAudio.pause();
+    snusCollectAudio = null;
+  }
+
+  if (fifaAudio) {
+      fifaAudio.pause
+fifaAudio = null;
+  }
+
+    if (timeAudio) {
+        timeAudio.pause();
+        timeAudio = null;
+    }
+});
+
+return {
+  gameContainer,
+  speedometerCanvas,
+  isGameOver,
+  showOverlay,
+  startGame,
+  showVehicleSelection,
+  timeRemaining,
+  score,
+  showHighScoreInput,
+  playerName,
+  highScores,
+  showHighScoreList,
+  submitHighScore,
+  restartGame,
+  currentChannel,
+  toggleRadioChannel,
+  scoreDisplayVisible,
+  scoreDisplayValue,
+  scoreDisplayPosition
+};
+},
 });
 </script>
-
 <style scoped>
 .game-container {
-  position: relative;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  background-color: black;
-  width: 100vw;
-  height: 100vh;
-  overflow: hidden;
-  margin-left: -5rem;
-  /* CRT Effekt */
-  filter: contrast(1.1) saturate(1.0) brightness(1.1);
-  position: relative;
+position: relative;
+display: flex;
+justify-content: center;
+align-items: center;
+background-color: black;
+width: 100vw;
+height: 100vh;
+overflow: hidden;
+margin-left: -5rem;
+/* CRT Effekt */
+filter: contrast(1.1) saturate(1.0) brightness(1.1);
+position: relative;
 }
 
 .game-container::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  /* Skapa scanlines-effekt */
-  background: repeating-linear-gradient(
-    to bottom,
-    rgba(0, 0, 0, 0.15) 0px,
-    rgba(0, 0, 0, 0.15) 2px,
-    transparent 2px,
-    transparent 4px
-  );
-  pointer-events: none;
-  mix-blend-mode: multiply;
-  opacity: 0.5;
-  z-index: 100000;
+content: "";
+position: absolute;
+top: 0;
+left: 0;
+width: 100%;
+height: 100%;
+/* Skapa scanlines-effekt */
+background: repeating-linear-gradient(
+to bottom,
+rgba(0, 0, 0, 0.15) 0px,
+rgba(0, 0, 0, 0.15) 2px,
+transparent 2px,
+transparent 4px
+);
+pointer-events: none;
+mix-blend-mode: multiply;
+opacity: 0.5;
+z-index: 100000;
 }
 
 .game-container canvas {
-  width: 100%;
-  height: 100%;
-  image-rendering: pixelated;
+width: 100%;
+height: 100%;
+image-rendering: pixelated;
 }
 
 .tv-overlay {
-  position: fixed;
-  top: 3vh;
-  left: 0;
-  width: 105vw;
-  height: 104vh;
-  pointer-events: none;
-  z-index: 100;
-  display: flex;
-  justify-content: center;
-  align-items: center;
+position: fixed;
+top: 3vh;
+left: 0;
+width: 105vw;
+height: 104vh;
+pointer-events: none;
+z-index: 100;
+display: flex;
+justify-content: center;
+align-items: center;
 }
 
 .tv-overlay img {
-  width: 150%;
-  height: 150%;
-  object-fit: contain;
+width: 150%;
+height: 150%;
+object-fit: contain;
 }
 
 .speedometer-container {
-  position: absolute;
-  bottom: 7%;
-  right: 25%;
-  width: 200px;
-  height: 200px;
-  pointer-events: none;
-  z-index: 10;
+position: absolute;
+bottom: 7%;
+right: 25%;
+width: 200px;
+height: 200px;
+pointer-events: none;
+z-index: 10;
 }
 
 .speedometer-container canvas {
-  width: 120%;
-  height: 120%;
+width: 120%;
+height: 120%;
 }
 
 .overlay {
-  position: absolute;
-  top: -33rem;
-  left: -46rem;
-  width: 105%;
-  height: 105%;
-  background-color: black;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  z-index: 10;
+position: absolute;
+top: -33rem;
+left: -46rem;
+width: 105%;
+height: 105%;
+background-color: black;
+display: flex;
+flex-direction: column;
+justify-content: center;
+align-items: center;
+z-index: 10;
 }
 
 .overlay-image {
-  max-width: 60%;
-  margin-right: 10rem;
-  margin-top: 50%;
-  margin-left: 69%;
+max-width: 60%;
+margin-right: 10rem;
+margin-top: 50%;
+margin-left: 69%;
 }
 
 .play-button {
-  position: absolute;
-  margin-left: 70rem;
-  margin-top: 180vh;
-  padding: 10px 20px;
-  font-size: 24px;
-  cursor: pointer;
+position: absolute;
+margin-left: 70rem;
+margin-top: 180vh;
+padding: 10px 20px;
+font-size: 24px;
+cursor: pointer;
 }
 
 /* Vehicle Selection Overlay Styles */
 .vehicle-selection-overlay {
-  position: absolute;
-  top: 0;
-  left: -3%;
-  width: 100%;
-  height: 100%;
-  background-color: transparent;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  z-index: 10;
+position: absolute;
+top: 0;
+left: -3%;
+width: 100%;
+height: 100%;
+background-color: transparent;
+display: flex;
+flex-direction: column;
+justify-content: center;
+align-items: center;
+z-index: 10;
 }
 
 .vehicle-stats {
-  position: absolute;
-  color: white;
-  text-align: center;
-  margin-top: 55vh;
-  font-size: 1.5vw;
-  font-family: 'Press Start 2P', 'VT323', 'Pixelated MS Sans Serif', 'Monaco',
-    monospace;
-  -webkit-font-smoothing: none;
-  -moz-osx-font-smoothing: none;
+position: absolute;
+color: white;
+text-align: center;
+margin-top: 55vh;
+font-size: 1.5vw;
+font-family: 'Press Start 2P', 'VT323', 'Pixelated MS Sans Serif', 'Monaco',
+monospace;
+-webkit-font-smoothing: none;
+-moz-osx-font-smoothing: none;
 }
 
 /* HUD Styles */
 .hud {
-  position: absolute;
-  top: 0;
-  width: 100%;
-  color: white;
-  display: flex;
-  justify-content: space-between;
-  padding: 10px;
-  font-family: 'Press Start 2P', 'VT323', 'Pixelated MS Sans Serif', 'Monaco',
-    monospace;
-  -webkit-font-smoothing: none;
-  -moz-osx-font-smoothing: none;
-  z-index: 10;
+position: absolute;
+top: 0;
+width: 100%;
+color: white;
+display: flex;
+justify-content: space-between;
+padding: 10px;
+font-family: 'Press Start 2P', 'VT323', 'Pixelated MS Sans Serif', 'Monaco',
+monospace;
+-webkit-font-smoothing: none;
+-moz-osx-font-smoothing: none;
+z-index: 10;
 }
 
 .timer {
-  position: absolute;
-  top: 5vh;
-  left: -8vh;
-  font-size: 24px;
-  text-align: center;
-  width: 100%;
+position: absolute;
+top: 5vh;
+left: -8vh;
+font-size: 24px;
+text-align: center;
+width: 100%;
 }
 
 .score {
-  position: absolute;
-  top: 6vh;
-  left: 20%;
-  font-size: 24px;
+position: absolute;
+top: 6vh;
+left: 20%;
+font-size: 24px;
 }
 
 /* High Score Input Styles */
 .high-score-input,
 .high-score-list {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background-color: rgba(0, 0, 0, 0.8);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  z-index: 20;
-  font-family: 'Press Start 2P', 'VT323', 'Pixelated MS Sans Serif', 'Monaco', monospace;
-  -webkit-font-smoothing: none;
-  -moz-osx-font-smoothing: none;
+position: absolute;
+top: 0;
+left: 0;
+width: 100%;
+height: 100%;
+background-color: rgba(0, 0, 0, 0.8);
+display: flex;
+justify-content: center;
+align-items: center;
+z-index: 20;
+font-family: 'Press Start 2P', 'VT323', 'Pixelated MS Sans Serif', 'Monaco', monospace;
+-webkit-font-smoothing: none;
+-moz-osx-font-smoothing: none;
 }
 
 .high-score-content {
-  background-color: #222;
-  padding: 20px;
-  border-radius: 10px;
-  text-align: center;
-  color: white;
+background-color: #222;
+padding: 20px;
+border-radius: 10px;
+text-align: center;
+color: white;
 }
 
 .high-score-content h2 {
-  margin-bottom: 20px;
-  font-size: 24px;
+margin-bottom: 20px;
+font-size: 24px;
 }
 
 .high-score-content input {
-  width: 80%;
-  padding: 10px;
-  margin-bottom: 10px;
-  font-size: 16px;
-  font-family: 'Press Start 2P', 'VT323', 'Pixelated MS Sans Serif', 'Monaco', monospace;
-  -webkit-font-smoothing: none;
-  -moz-osx-font-smoothing: none;
+width: 80%;
+padding: 10px;
+margin-bottom: 10px;
+font-size: 16px;
+font-family: 'Press Start 2P', 'VT323', 'Pixelated MS Sans Serif', 'Monaco', monospace;
+-webkit-font-smoothing: none;
+-moz-osx-font-smoothing: none;
 }
 
 .high-score-content button {
-  padding: 10px 20px;
-  font-size: 18px;
-  cursor: pointer;
-  font-family: 'Press Start 2P', 'VT323', 'Pixelated MS Sans Serif', 'Monaco', monospace;
-  -webkit-font-smoothing: none;
-  -moz-osx-font-smoothing: none;
+padding: 10px 20px;
+font-size: 18px;
+cursor: pointer;
+font-family: 'Press Start 2P', 'VT323', 'Pixelated MS Sans Serif', 'Monaco', monospace;
+-webkit-font-smoothing: none;
+-moz-osx-font-smoothing: none;
 }
 
 .high-score-content ol {
-  list-style: none;
-  padding: 0;
-  margin: 0 0 20px 0;
+list-style: none;
+padding: 0;
+margin: 0 0 20px 0;
 }
 
 .high-score-content li {
-  margin: 5px 0;
-  font-size: 18px;
+margin: 5px 0;
+font-size: 18px;
 }
 
 .radio-interface {
-  position: absolute;
-  bottom: 7%;
-  left: 18%;
-  background: rgba(0, 0, 0, 0.8);
-  border: 2px solid #444;
-  border-radius: 5px;
-  padding: 10px;
-  color: #0f0;
-  font-family: 'Press Start 2P', monospace;
-  z-index: 10;
+position: absolute;
+bottom: 7%;
+left: 18%;
+background: rgba(0, 0, 0, 0.8);
+border: 2px solid #444;
+border-radius: 5px;
+padding: 10px;
+color: #0f0;
+font-family: 'Press Start 2P', monospace;
+z-index: 10;
 }
 
 .radio-display {
-  background: #111;
-  padding: 8px;
-  margin-bottom: 8px;
-  border: 1px solid #333;
+background: #111;
+padding: 8px;
+margin-bottom: 8px;
+border: 1px solid #333;
 }
 
 .radio-text {
-  font-size: 12px;
-  margin-bottom: 4px;
+font-size: 12px;
+margin-bottom: 4px;
 }
 
 .radio-frequency {
-  font-size: 14px;
+font-size: 14px;
 }
 
 .radio-button {
-  background: #333;
-  color: #0f0;
-  border: 1px solid #444;
-  padding: 5px 10px;
-  font-family: 'Press Start 2P', monospace;
-  cursor: pointer;
-  width: 100%;
+background: #333;
+color: #0f0;
+border: 1px solid #444;
+padding: 5px 10px;
+font-family: 'Press Start 2P', monospace;
+cursor: pointer;
+width: 100%;
 }
 
 .radio-button:hover {
-  background: #444;
+background: #444;
+}
+
+.score-display {
+position: absolute;
+color: rgb(255, 255, 255);
+font-size: 52px;
+font-family: 'Press Start 2P', 'VT323', 'Pixelated MS Sans Serif', 'Monaco', monospace;
+transition: transform 0.5s ease, opacity 0.5s ease;
+opacity: 1;
+margin-top: -10%;
+margin-left: 8%;
+z-index: 999;
 }
 </style>
