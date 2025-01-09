@@ -1635,7 +1635,7 @@ const restartGame = () => {
 
 const playBackgroundMusic = () => {
   if (!backgroundAudio) {
-    backgroundAudio = new Audio('/assets/sounds/time.mp3');
+    backgroundAudio = new Audio('/assets/sounds/barseback.mp3');
     backgroundAudio.loop = true;
     backgroundAudio.volume = 1;
   }
