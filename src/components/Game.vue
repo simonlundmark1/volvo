@@ -772,8 +772,8 @@ export default defineComponent({
         collectibleTopBottomMaterial
       ];
 
-      const numCollectibles = 120;
-      const numCollectiblesOnRoofs = 60;
+      const numCollectibles = 220;
+      const numCollectiblesOnRoofs = 160;
       const numCollectiblesOnRoads = numCollectibles - numCollectiblesOnRoofs;
 
       for (let i = 0; i < numCollectiblesOnRoads; i++) {
