@@ -408,7 +408,7 @@ export default defineComponent({
         (error) => handleLoadingError(error, 'ground texture')
       );
 
-      const planeGeometry = new THREE.PlaneGeometry(2000, 2000);
+      const planeGeometry = new THREE.PlaneGeometry(3000, 3000);
       const planeMaterial = new THREE.MeshBasicMaterial({
         map: groundTexture,
         side: THREE.DoubleSide,
