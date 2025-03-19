@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div>
     <div class="game-container" ref="gameContainer"></div>
     <div
@@ -22,10 +22,10 @@
     <!-- Vehicle Selection Screen -->
     <div v-else-if="showVehicleSelection" class="vehicle-selection-overlay">
       <div class="vehicle-stats">
-        <h2>Volvo 940</h2>
-        <p>Speed: Very Fast</p>
-        <p>Handling: Good</p>
-        <p><br>Press Enter to select</p>
+        <h2>{{ selectedVehicle === 'volvo' ? 'Volvo 940' : 'Saab 900' }}</h2>
+        <p>Speed: {{ selectedVehicle === 'volvo' ? 'Very Fast' : selectedVehicle === 'saab' ? 'Fast' : 'Excellent' }}</p>
+        <p>Handling: {{ selectedVehicle === 'volvo' ? 'Good' : selectedVehicle === 'saab' ? 'Excellent' : 'Normal' }}</p>
+        <p><br>Use ← → to change vehicle<br>Press Enter to select</p>
       </div>
     </div>
 
@@ -92,14 +92,14 @@
       </div>
     </div>
     <!-- After the score-display div -->
-    <div v-if="showDevInfo" class="dev-info-window">
-      <h3>Developer Info</h3>
+    <div v-if="showDevInfo" class="dev-info">
+      <h3>Dev Info</h3>
+      <p>FPS: {{ currentFps }}</p>
+      <p>Velocity: {{ Math.round(velocity.value * 100) / 100 }}</p>
+      <p>Angular Velocity: {{ Math.round(angularVelocity.value * 1000) / 1000 }}</p>
+      <p>On Ground: {{ onGround }}</p>
       <p>Position: X: {{ Math.round(carPosition.x * 100) / 100 }}, Y: {{ Math.round(carPosition.y * 100) / 100 }}, Z: {{ Math.round(carPosition.z * 100) / 100 }}</p>
       <p>Speed: {{ Math.round(currentSpeed * 10) / 10 }} km/h</p>
-      <p>Velocity: {{ Math.round(velocity * 100) / 100 }}</p>
-      <p>Angular Velocity: {{ Math.round(angularVelocity * 1000) / 1000 }}</p>
-      <p>On Ground: {{ onGround ? 'Yes' : 'No' }}</p>
-      <p>FPS: {{ currentFps }}</p>
     </div>
   </div>
 </template>
@@ -117,6 +117,7 @@ import * as THREE from 'three';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader';
 import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { PMREMGenerator } from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader';
 
 export default defineComponent({
   name: 'GameComponent',
@@ -135,8 +136,8 @@ export default defineComponent({
       ArrowLeft: false,
       ArrowRight: false,
     };
-    let velocity = 0;
-    let angularVelocity = 0;
+    const velocity = ref(0);
+    const angularVelocity = ref(0);
     const rotationDamping = 0.95;
     let modelLoaded = false;
     const isGameOver = ref(false);
@@ -151,8 +152,9 @@ export default defineComponent({
     const showVehicleSelection = ref(false);
     let vehicleSelectionScene: THREE.Scene;
     let vehicleSelectionCamera: THREE.PerspectiveCamera;
-    let vehicleSelectionCar: THREE.Object3D;
+    let vehicleSelectionCar: THREE.Object3D | null = null;
     let vehicleSelectionMusic: HTMLAudioElement | null = null;
+    const selectedVehicle = ref('volvo'); // Track which vehicle is selected
 
     // Constants for Acceleration and Speed
     const MAX_SPEED = 20;
@@ -212,6 +214,20 @@ export default defineComponent({
 
     const handleLoadingError = (error: unknown, assetType: string) => {
       console.error(`Error loading ${assetType}:`, error);
+
+      // Add more detailed information to help debug the specific issue
+      if (assetType.includes('saab') || assetType.includes('Saab')) {
+        console.error('SAAB MODEL ERROR DETAILS:', {
+          error,
+          assetType,
+          path: assetType
+        });
+
+        // Log the full error stack if available
+        if (error instanceof Error) {
+          console.error('Error stack:', error.stack);
+        }
+      }
     };
 
     let explosionTexture: THREE.Texture;
@@ -308,66 +324,157 @@ export default defineComponent({
     const initVehicleSelectionScene = () => {
       vehicleSelectionScene = new THREE.Scene();
       vehicleSelectionCamera = new THREE.PerspectiveCamera(
-        90,
+        75, // Reduced FOV for a less distorted view
         RENDERER_WIDTH / RENDERER_HEIGHT,
         0.1,
         1000
       );
-      vehicleSelectionCamera.position.set(7, 1, -2);
-      vehicleSelectionCamera.lookAt(-1, 0, 0);
+
+      // Position camera to better see models at origin
+      vehicleSelectionCamera.position.set(0, 0, 8); // Move back on Z axis to see objects at origin
+      vehicleSelectionCamera.lookAt(0, 0, 0);
 
       vehicleSelectionScene.background = new THREE.TextureLoader().load(
         '/assets/images/showroom.webp'
       );
 
-      const ambientLightSelection = new THREE.AmbientLight(0xffffff, 0.1);
-      vehicleSelectionScene.add(ambientLightSelection);
+
+      loadVehicleSelectionModel();
+    };
+
+    const loadVehicleSelectionModel = () => {
+      const gltfModelPath = selectedVehicle.value === 'volvo'
+        ? '/assets/models/Volvo_240.glb'
+        : '/assets/models/saab/Saab900.glb';
+
+      /* More thorough cleanup of old model */
+      if (vehicleSelectionCar) {
+        // First remove from scene
+        vehicleSelectionScene.remove(vehicleSelectionCar);
+
+        // Dispose all geometries and materials
+                vehicleSelectionCar.traverse((node) => {
+                  if ((node as THREE.Mesh).isMesh) {
+                    const mesh = node as THREE.Mesh;
+            if (mesh.geometry) {
+              mesh.geometry.dispose();
+            }
+
+            // Handle materials (could be array or single material)
+            if (Array.isArray(mesh.material)) {
+              mesh.material.forEach(material => {
+                if (material.map) material.map.dispose();
+                material.dispose();
+              });
+            } else if (mesh.material) {
+              if (mesh.material.map) mesh.material.map.dispose();
+              mesh.material.dispose();
+            }
+          }
+        });
+
+        // Clear any other references
+        vehicleSelectionCar = null;
+
+        // Force a garbage collection hint (won't guarantee collection but can help)
+        if (window.gc) window.gc();
+      }
+
+      // Clear the scene before adding new model
+      while (vehicleSelectionScene.children.length > 0) {
+        const object = vehicleSelectionScene.children[0];
+        vehicleSelectionScene.remove(object);
+      }
 
       const objLoader = new OBJLoader();
+      const modelPath = selectedVehicle.value === 'volvo'
+        ? '/assets/models/model_0.obj'
+        : '/assets/models/saab/model_0.obj';
+
+      console.log(`Loading vehicle model: ${modelPath}`);
+
       objLoader.load(
-        '/assets/models/model_0.obj',
+        modelPath,
         (object) => {
+          console.log(`Model loaded successfully: ${modelPath}`);
           vehicleSelectionCar = object;
-          vehicleSelectionCar.scale.set(0.01, 0.01, 0.01);
-          vehicleSelectionCar.position.set(0, -2.5, 0);
-          vehicleSelectionCar.rotation.y += Math.PI;
 
+          // Apply different scaling and positioning based on the selected vehicle
+          if (selectedVehicle.value === 'volvo') {
+            // Volvo has larger coordinate values in its OBJ file, so we use a smaller scale
+            vehicleSelectionCar.scale.set(0.01, 0.01, 0.01);
+            vehicleSelectionCar.position.set(0, -3.5, 0);
+            vehicleSelectionCar.rotation.y = Math.PI;
+          } else {
+            // Saab has smaller coordinate values, so we need a larger scale
+            console.log('Applying Saab-specific settings');
+
+            // Scale adjusted to ensure the Saab is properly visible (1.5x larger)
+            vehicleSelectionCar.scale.set(1.5, 1.5, 1.5);
+            // Adjust position to center it in the view
+            vehicleSelectionCar.position.set(0, 1, 0);
+            // Make the Saab lay down horizontally (90 degrees around X-axis instead of Z-axis)
+            vehicleSelectionCar.rotation.set(Math.PI/2, Math.PI, 0);
+
+            // Add a debug log to understand the model's structure better
+            console.log('Saab model structure:', {
+              children: vehicleSelectionCar.children.length,
+              position: vehicleSelectionCar.position,
+              rotation: vehicleSelectionCar.rotation
+            });
+          }
+
+          // Add to scene
+          vehicleSelectionScene.add(vehicleSelectionCar);
+
+          // Now load texture
           const textureLoader = new THREE.TextureLoader();
-          textureLoader.load(
-            '/assets/models/Volvo_Diffusenew.png',
-            (texture: THREE.Texture) => {
-              texture.wrapS = THREE.RepeatWrapping;
-              texture.wrapT = THREE.RepeatWrapping;
-              texture.encoding = THREE.sRGBEncoding;
-              texture.minFilter = THREE.LinearMipMapNearestFilter;
-              texture.magFilter = THREE.LinearFilter;
-              texture.generateMipmaps = true;
-              texture.anisotropy = Math.min(
-                renderer.capabilities.getMaxAnisotropy(),
-                4
-              );
+          const texturePath = selectedVehicle.value === 'volvo'
+            ? '/assets/models/Volvo_Diffusenew.png'
+            : '/assets/models/saab/Saab900.png';
 
-              vehicleSelectionCar.traverse((node) => {
-                if ((node as THREE.Mesh).isMesh) {
-                  const mesh = node as THREE.Mesh;
-                  mesh.material = new THREE.MeshBasicMaterial({
-                    map: texture,
-                  });
-                  mesh.castShadow = false;
-                  mesh.receiveShadow = false;
-                  mesh.material.side = THREE.DoubleSide;
-                }
-              });
+          textureLoader.load(
+            texturePath,
+            (texture) => {
+              console.log(`Texture loaded: ${texturePath}`);
+              // Apply the texture
+              if (vehicleSelectionCar) {
+                vehicleSelectionCar.traverse((node) => {
+                  if ((node as THREE.Mesh).isMesh) {
+                    const mesh = node as THREE.Mesh;
+                    mesh.material = new THREE.MeshBasicMaterial({
+                      map: texture,
+                      side: THREE.DoubleSide
+                    });
+                    mesh.castShadow = false;
+                    mesh.receiveShadow = false;
+                  }
+                });
+              }
             },
             undefined,
-            (error) => handleLoadingError(error, 'Volvo_Diffusenew.png')
+            (error) => handleLoadingError(error, gltfModelPath)
           );
-
-          vehicleSelectionScene.add(vehicleSelectionCar);
         },
         undefined,
-        (error) => handleLoadingError(error, 'model_0.obj')
+        (error) => handleLoadingError(error, modelPath)
       );
+    };
+
+    const switchVehicle = (direction: 'next' | 'prev') => {
+      // Both cases do the same thing, you could simplify this
+      selectedVehicle.value = selectedVehicle.value === 'volvo' ? 'saab' : 'volvo';
+
+      // Reset camera to be consistent regardless of vehicle
+      vehicleSelectionCamera.position.set(0, 0, 8);
+      vehicleSelectionCamera.lookAt(0, 0, 0);
+
+      // Force a render before loading new model to clear any artifacts
+      if (vehicleSelectionRenderer) {
+        vehicleSelectionRenderer.clear();
+      }
+
+      loadVehicleSelectionModel();
     };
 
     const initScene = () => {
@@ -705,18 +812,28 @@ export default defineComponent({
       generateMoose();
 
       const objLoaderMain = new OBJLoader();
+
       objLoaderMain.load(
-        '/assets/models/model_0.obj',
+        selectedVehicle.value === 'volvo' ? '/assets/models/model_0.obj' : '/assets/models/saab/model_0.obj',
         (object) => {
+          console.log(`Main game model loaded successfully: ${selectedVehicle.value}`);
           car = object;
 
-          car.scale.set(0.01, 0.01, 0.01);
-          car.position.y = -1.65;
-
-          car.rotation.y += Math.PI;
+          // Apply different scaling based on the selected vehicle
+          if (selectedVehicle.value === 'volvo') {
+            car.scale.set(0.01, 0.01, 0.01);
+            car.position.y = -1.65;
+            car.rotation.y = Math.PI;
+          } else {
+            // Saab-specific adjustments matching the selection view
+            console.log('Applying Saab model settings to main game car');
+            car.scale.set(1.05, 1.05, 1.05); // Increased by 1.5x
+            car.position.y = -1.65; // Keep at same height as Volvo for collision detection
+            car.rotation.set(Math.PI/2, Math.PI, 0); // Make it lay down horizontally
+          }
 
           textureLoader.load(
-            '/assets/models/Volvo_Diffusenew.png',
+            selectedVehicle.value === 'volvo' ? '/assets/models/Volvo_Diffusenew.png' : '/assets/models/saab/Saab900.png',
             (texture: THREE.Texture) => {
               texture.wrapS = THREE.RepeatWrapping;
               texture.wrapT = THREE.RepeatWrapping;
@@ -742,7 +859,7 @@ export default defineComponent({
               });
             },
             undefined,
-            (error) => handleLoadingError(error, 'Volvo_Diffusenew.png')
+            (error) => handleLoadingError(error, selectedVehicle.value === 'volvo' ? 'Volvo_Diffusenew.png' : 'Saab900.png')
           );
 
           scene.add(car);
@@ -750,7 +867,7 @@ export default defineComponent({
           lastCarPosition.copy(car.position);
         },
         undefined,
-        (error) => handleLoadingError(error, 'model_0.obj')
+        (error) => handleLoadingError(error, selectedVehicle.value === 'volvo' ? 'model_0.obj' : 'model_0.obj for Saab')
       );
 
       const textureLoader2 = new THREE.TextureLoader();
@@ -1228,12 +1345,20 @@ const animate = (time: number) => {
   // Update the car position and speed data if car exists
   if (car) {
     carPosition.value.copy(car.position);
-    currentSpeed.value = Math.abs(velocity) * 100; // Convert to km/h
+    currentSpeed.value = Math.abs(velocity.value) * 100; // Convert to km/h
   }
 
   if (showVehicleSelection.value) {
-    if (vehicleSelectionCar) {
-      vehicleSelectionCar.rotation.y += 0.007;
+    if (vehicleSelectionCar !== null) {
+      if (selectedVehicle.value === 'volvo') {
+        // Keep the original rotation for Volvo
+        vehicleSelectionCar.rotation.y += 0.007;
+      } else {
+        // For Saab, maintain the lay-down position but rotate around Y axis
+
+        // Add a gentle roll animation since the car is now laying down
+        vehicleSelectionCar.rotation.z += 0.007;
+      }
     }
     renderer.render(vehicleSelectionScene, vehicleSelectionCamera);
   } else {
@@ -1246,7 +1371,7 @@ const animate = (time: number) => {
       !showHighScoreList.value
     ) {
           // Calculate speed factor for dynamic acceleration and handling
-      const speedFactor = Math.abs(velocity) / MAX_SPEED;
+      const speedFactor = Math.abs(velocity.value) / MAX_SPEED;
       const accelerationFactor = 1 - speedFactor;
       const currentAcceleration =
           MIN_ACCELERATION +
@@ -1254,29 +1379,29 @@ const animate = (time: number) => {
 
       if (onGround) {
         if (keys.ArrowUp) {
-          velocity += currentAcceleration * (deltaTime / 1000);
+          velocity.value += currentAcceleration * (deltaTime / 1000);
         }
         if (keys.ArrowDown) {
-          velocity -= DECELERATION * (deltaTime / 1000);
+          velocity.value -= DECELERATION * (deltaTime / 1000);
         }
 
         if (!keys.ArrowUp && !keys.ArrowDown) {
-          velocity *= FRICTION;
+          velocity.value *= FRICTION;
         }
       }
 
-       velocity = THREE.MathUtils.clamp(
-        velocity,
+       velocity.value = THREE.MathUtils.clamp(
+        velocity.value,
         MAX_REVERSE_SPEED,
         MAX_SPEED
       );
 
       const velocityThreshold = 0.001;
-      if (Math.abs(velocity) < velocityThreshold) {
-        velocity = 0;
+      if (Math.abs(velocity.value) < velocityThreshold) {
+        velocity.value = 0;
       }
 
-      car.translateZ(velocity * (deltaTime / 1000) * 100);
+      car.translateZ(velocity.value * (deltaTime / 1000) * 100);
 
       const deltaPos = car.position.clone().sub(lastCarPosition);
       const actualSpeed = deltaPos.length() / (deltaTime / 1000);
@@ -1284,8 +1409,8 @@ const animate = (time: number) => {
 
       const minSteerSpeed = Math.PI / 100;
       let steerFactor = 0;
-       if (Math.abs(velocity) > minSteerSpeed) {
-            steerFactor = Math.sign(velocity);
+       if (Math.abs(velocity.value) > minSteerSpeed) {
+            steerFactor = Math.sign(velocity.value);
         }
 
 
@@ -1302,33 +1427,33 @@ const animate = (time: number) => {
 
       if (steerFactor !== 0) {
           if (keys.ArrowLeft) {
-            angularVelocity += dynamicRotationAcceleration * steerFactor;
+            angularVelocity.value += dynamicRotationAcceleration * steerFactor;
           }
           if (keys.ArrowRight) {
-            angularVelocity -= dynamicRotationAcceleration * steerFactor;
+            angularVelocity.value -= dynamicRotationAcceleration * steerFactor;
           }
        } else {
-           angularVelocity = 0;
+           angularVelocity.value = 0;
         }
 
-      angularVelocity *= rotationDamping;
+      angularVelocity.value *= rotationDamping;
 
         const angularThreshold = 0.0001;
-        if (Math.abs(angularVelocity) < angularThreshold) {
-            angularVelocity = 0;
+        if (Math.abs(angularVelocity.value) < angularThreshold) {
+            angularVelocity.value = 0;
         }
 
-      angularVelocity = THREE.MathUtils.clamp(angularVelocity, -0.5, 0.5);
+      angularVelocity.value = THREE.MathUtils.clamp(angularVelocity.value, -0.5, 0.5);
 
         if (steerFactor !== 0) {
-            car.rotation.y += angularVelocity * (deltaTime / 1000) * 30;
+            car.rotation.y += angularVelocity.value * (deltaTime / 1000) * 30;
         }
 
         let targetTiltAngle = 0;
-        if (angularVelocity !== 0 && Math.abs(velocity) > minSteerSpeed) {
-            const tiltSpeedFactor = Math.abs(velocity) / MAX_SPEED;
+        if (angularVelocity.value !== 0 && Math.abs(velocity.value) > minSteerSpeed) {
+            const tiltSpeedFactor = Math.abs(velocity.value) / MAX_SPEED;
           targetTiltAngle =
-            -MAX_TILT_ANGLE * (angularVelocity / 0.02) * tiltSpeedFactor;
+            -MAX_TILT_ANGLE * (angularVelocity.value / 0.02) * tiltSpeedFactor;
         }
 
 
@@ -1340,7 +1465,7 @@ const animate = (time: number) => {
 
       car.rotation.z = currentTiltAngle;
 
-      const speedInKmH = Math.abs(velocity) * 100;
+      const speedInKmH = Math.abs(velocity.value) * 100;
       drawSpeedometer(speedInKmH);
 
         // Replace the camera positioning code with improved bobbing-free interpolation
@@ -1360,7 +1485,7 @@ const animate = (time: number) => {
         smoothedPosition.y = currentY;
 
         // Use different interpolation speeds based on velocity and turning
-        const turningFactor = Math.abs(angularVelocity) / 0.5;
+        const turningFactor = Math.abs(angularVelocity.value) / 0.5;
 
         // Calculate appropriate interpolation speed - more consistent during turns
         const baseInterpolation = onGround ? 0.15 : 0.07; // Increased from previous values
@@ -1571,10 +1696,10 @@ const handleCollision = () => {
 
   scene.remove(car);
 
-    velocity = 0;
-    angularVelocity = 0;
+  velocity.value = 0;
+  angularVelocity.value = 0;
 
-    setTimeout(() => resetGame(false), 1000);
+  setTimeout(() => resetGame(false), 1000);
 };
 
 const drawSpeedometer = (speed: number) => {
@@ -1660,6 +1785,12 @@ const onKeyDown = (event: KeyboardEvent) => {
         vehicleSelectionMusic.currentTime = 0;
       }
       playBackgroundMusic();
+    } else if (event.key === 'ArrowRight') {
+      event.preventDefault();
+      switchVehicle('next');
+    } else if (event.key === 'ArrowLeft') {
+      event.preventDefault();
+      switchVehicle('prev');
     }
   } else if (showHighScoreInput.value) {
     // Press enter to submit
@@ -1747,6 +1878,18 @@ watch(
   }
 );
 
+// Add a watch for selectedVehicle changes to update the vehicle selection screen
+watch(
+  () => selectedVehicle.value,
+  () => {
+    if (showVehicleSelection.value) {
+      loadVehicleSelectionModel();
+    }
+  }
+);
+
+onMounted(onMountedHandler);
+
 const resetGame = (isInitialSpawn = false) => {
   if (!car) return;
 
@@ -1765,8 +1908,8 @@ const resetGame = (isInitialSpawn = false) => {
     scene.add(car);
   }
 
-  velocity = 0;
-  angularVelocity = 0;
+  velocity.value = 0;
+  angularVelocity.value = 0;
   verticalVelocity = 0;
 
   if (isInitialSpawn) {
@@ -1799,7 +1942,6 @@ const resetGame = (isInitialSpawn = false) => {
     }
   } else {
     // For respawns after collision, keep the random spawn logic
-    car.position.y = -1.65;
 
     // Ensure car spawns within the map boundaries, not outside the tree fencing
     const mapWidth = columns * blockSpacing;
@@ -1818,171 +1960,6 @@ const resetGame = (isInitialSpawn = false) => {
   // Remove the general car.rotation.set(0, 0, 0) line since we're handling
   // rotation specifically in each spawn case now
 };
-
-const endGame = () => {
-  isGameOver.value = true;
-  showHighScoreInput.value = true;
-  velocity = 0;
-    angularVelocity = 0;
-};
-
-const submitHighScore = () => {
-  const newScore = {
-    name: playerName.value || 'Anonymous',
-    score: score.value,
-  };
-
-  const existingScores = JSON.parse(
-    localStorage.getItem('highScores') || '[]'
-  );
-
-  existingScores.push(newScore);
-
-  existingScores.sort((a: any, b: any) => b.score - a.score);
-
-  existingScores.splice(10);
-
-  localStorage.setItem('highScores', JSON.stringify(existingScores));
-
-  highScores.value = existingScores;
-
-  showHighScoreInput.value = false;
-  showHighScoreList.value = true;
-};
-
-const restartGame = () => {
-  isGameOver.value = false;
-  isTimeUp.value = false;
-  showHighScoreList.value = false;
-  timeRemaining.value = 60;
-  score.value = 0;
-  playerName.value = '';
-  resetGame(true);
-
-    collectibles.forEach((collectible) => {
-      scene.remove(collectible);
-    });
-    collectibles = [];
-    collectibleData.splice(0, collectibleData.length);
-
-
-  pyramids.forEach((pyramid) => {
-        scene.remove(pyramid);
-    });
-    pyramids = [];
-    pyramidData.splice(0, pyramidData.length);
-
-  generateCollectibles();
-  generatePyramids();
-  mooseData.forEach((moose) => {
-    scene.remove(moose.mesh);
-  });
-  mooseData.splice(0, mooseData.length);
-  generateMoose();
-};
-
-const playBackgroundMusic = () => {
-  if (!backgroundAudio) {
-    backgroundAudio = new Audio('/assets/sounds/barseback.mp3');
-    backgroundAudio.loop = true;
-    backgroundAudio.volume = 1;
-  }
-  backgroundAudio.play().catch((error) => {
-    console.error('Error playing background music:', error);
-  });
-};
-
-const playVehicleSelectionMusic = () => {
-  if (!vehicleSelectionMusic) {
-    vehicleSelectionMusic = new Audio('/assets/sounds/1080.mp3');
-    vehicleSelectionMusic.loop = true;
-      vehicleSelectionMusic.volume = 0.7;
-  }
-  vehicleSelectionMusic.play().catch((error) => {
-    console.error('Error playing vehicle selection music:', error);
-  });
-};
-
-const startGame = () => {
-  showOverlay.value = false;
-  showVehicleSelection.value = true;
-  playVehicleSelectionMusic();
-};
-
-const currentChannel = ref('local');
-let onlineRadio: HTMLAudioElement | null = null;
-let fifaAudio: HTMLAudioElement | null = null;
-let timeAudio: HTMLAudioElement | null = null;
-
-const toggleRadioChannel = () => {
-  if (currentChannel.value === 'local') {
-      if (!onlineRadio) {
-      onlineRadio = new Audio('https://stream.radiogellivare.se/listen/977mhz/radio.mp3');
-      onlineRadio.volume = 2;
-      }
-      if(backgroundAudio) {
-          backgroundAudio.pause();
-      }
-    onlineRadio.play().catch(error => {
-      console.error('Error playing online radio:', error);
-    });
-    currentChannel.value = 'online';
-  } else if (currentChannel.value === 'online') {
-    if (onlineRadio) {
-      onlineRadio.pause();
-    }
-      if (!fifaAudio) {
-        fifaAudio = new Audio('/assets/sounds/fifa.mp3');
-        fifaAudio.loop = true;
-          fifaAudio.volume = 0.7;
-    }
-      fifaAudio.play().catch(error => {
-          console.error('Error playing FIFA radio:', error);
-      });
-    currentChannel.value = 'fifa';
-  } else if (currentChannel.value === 'fifa') {
-      if (fifaAudio) {
-        fifaAudio.pause();
-      }
-      if(backgroundAudio){
-          backgroundAudio.play().catch(error => {
-              console.error('Error playing background music:', error);
-          });
-      }
-    currentChannel.value = 'local';
-  } else {
-        if (fifaAudio) {
-          fifaAudio.pause();
-        }
-      if (!timeAudio) {
-        timeAudio = new Audio('/assets/sounds/barseback.mp3');
-        timeAudio.loop = true;
-          timeAudio.volume = 0.7;
-      }
-      timeAudio.play().catch(error => {
-        console.error('Error playing Time radio:', error);
-      });
-      currentChannel.value = 'time';
-  }
-};
-
-const scoreDisplayVisible = ref(false);
-const scoreDisplayValue = ref('');
-const scoreDisplayPosition = ref({ x: 0, y: 0 });
-
-const showScoreDisplay = (value: number, screenPosition: {x: number; y: number}) => {
-  scoreDisplayValue.value = `+${value}`;
-    // Show a bit above the car
-    scoreDisplayPosition.value = { x: screenPosition.x, y: screenPosition.y - 50 };
-  scoreDisplayVisible.value = true;
-
-  // Hide the score display after a short duration
-  setTimeout(() => {
-    scoreDisplayVisible.value = false;
-  }, 1000); // Display for 1 second
-};
-
-onMounted(onMountedHandler);
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeyDown);
@@ -2036,20 +2013,184 @@ onBeforeUnmount(() => {
   }
 
   if (fifaAudio) {
-      fifaAudio.pause
-fifaAudio = null;
+    fifaAudio.pause();
+    fifaAudio = null;
   }
 
-    if (timeAudio) {
-        timeAudio.pause();
-        timeAudio = null;
-    }
+  if (timeAudio) {
+    timeAudio.pause();
+    timeAudio = null;
+  }
 
   if (mooseHitAudio) {
     mooseHitAudio.pause();
     mooseHitAudio = null;
   }
 });
+
+const endGame = () => {
+  isGameOver.value = true;
+  showHighScoreInput.value = true;
+  velocity.value = 0;
+  angularVelocity.value = 0;
+};
+
+const submitHighScore = () => {
+  const newScore = {
+    name: playerName.value || 'Anonymous',
+    score: score.value,
+  };
+
+  const existingScores = JSON.parse(
+    localStorage.getItem('highScores') || '[]'
+  );
+
+  existingScores.push(newScore);
+
+  existingScores.sort((a: any, b: any) => b.score - a.score);
+
+  existingScores.splice(10);
+
+  localStorage.setItem('highScores', JSON.stringify(existingScores));
+
+  highScores.value = existingScores;
+
+  showHighScoreInput.value = false;
+  showHighScoreList.value = true;
+};
+
+const restartGame = () => {
+  isGameOver.value = false;
+  isTimeUp.value = false;
+  showHighScoreList.value = false;
+  timeRemaining.value = 60;
+  score.value = 0;
+  playerName.value = '';
+  resetGame(true);
+
+  collectibles.forEach((collectible) => {
+    scene.remove(collectible);
+  });
+  collectibles = [];
+  collectibleData.splice(0, collectibleData.length);
+
+  pyramids.forEach((pyramid) => {
+    scene.remove(pyramid);
+  });
+  pyramids = [];
+  pyramidData.splice(0, pyramidData.length);
+
+  generateCollectibles();
+  generatePyramids();
+  mooseData.forEach((moose) => {
+    scene.remove(moose.mesh);
+  });
+  mooseData.splice(0, mooseData.length);
+  generateMoose();
+};
+
+const playBackgroundMusic = () => {
+  if (!backgroundAudio) {
+    backgroundAudio = new Audio('/assets/sounds/barseback.mp3');
+    backgroundAudio.loop = true;
+    backgroundAudio.volume = 1;
+  }
+  backgroundAudio.play().catch((error) => {
+    console.error('Error playing background music:', error);
+  });
+};
+
+const playVehicleSelectionMusic = () => {
+  if (!vehicleSelectionMusic) {
+    vehicleSelectionMusic = new Audio('/assets/sounds/1080.mp3');
+    vehicleSelectionMusic.loop = true;
+    vehicleSelectionMusic.volume = 0.7;
+  }
+  vehicleSelectionMusic.play().catch((error) => {
+    console.error('Error playing vehicle selection music:', error);
+  });
+};
+
+const startGame = () => {
+  showOverlay.value = false;
+  showVehicleSelection.value = true;
+  playVehicleSelectionMusic();
+};
+
+const currentChannel = ref('local');
+let onlineRadio: HTMLAudioElement | null = null;
+let fifaAudio: HTMLAudioElement | null = null;
+let timeAudio: HTMLAudioElement | null = null;
+
+const toggleRadioChannel = () => {
+  if (currentChannel.value === 'local') {
+    if (!onlineRadio) {
+      onlineRadio = new Audio('https://stream.radiogellivare.se/listen/977mhz/radio.mp3');
+      onlineRadio.volume = 2;
+    }
+    if(backgroundAudio) {
+      backgroundAudio.pause();
+    }
+    onlineRadio.play().catch(error => {
+      console.error('Error playing online radio:', error);
+    });
+    currentChannel.value = 'online';
+  } else if (currentChannel.value === 'online') {
+    if (onlineRadio) {
+      onlineRadio.pause();
+    }
+    if (!fifaAudio) {
+      fifaAudio = new Audio('/assets/sounds/fifa.mp3');
+      fifaAudio.loop = true;
+      fifaAudio.volume = 0.7;
+    }
+    fifaAudio.play().catch(error => {
+      console.error('Error playing FIFA radio:', error);
+    });
+    currentChannel.value = 'fifa';
+  } else if (currentChannel.value === 'fifa') {
+    if (fifaAudio) {
+      fifaAudio.pause();
+    }
+    if(backgroundAudio){
+      backgroundAudio.play().catch(error => {
+        console.error('Error playing background music:', error);
+      });
+    }
+    currentChannel.value = 'local';
+  } else {
+    if (fifaAudio) {
+      fifaAudio.pause();
+    }
+    if (!timeAudio) {
+      timeAudio = new Audio('/assets/sounds/barseback.mp3');
+      timeAudio.loop = true;
+      timeAudio.volume = 0.7;
+    }
+    timeAudio.play().catch(error => {
+      console.error('Error playing Time radio:', error);
+    });
+    currentChannel.value = 'time';
+  }
+};
+
+// Add showDevInfo definition after the scoreDisplay variables
+const scoreDisplayVisible = ref(false);
+const scoreDisplayValue = ref('');
+const scoreDisplayPosition = ref({ x: 0, y: 0 });
+const showDevInfo = ref(false);
+
+const showScoreDisplay = (value: number, screenPosition: {x: number; y: number}) => {
+  scoreDisplayValue.value = `+${value}`;
+  // Show a bit above the car
+  scoreDisplayPosition.value = { x: screenPosition.x, y: screenPosition.y - 50 };
+  scoreDisplayVisible.value = true;
+
+  // Hide the score display after a short duration
+  setTimeout(() => {
+    scoreDisplayVisible.value = false;
+  }, 1000); // Display for 1 second
+};
 
 const createMooseModel = (): THREE.Group => {
   const mooseGroup = new THREE.Group();
@@ -2371,7 +2512,7 @@ const handleMooseHit = (moose: typeof mooseData[0], index: number) => {
   mooseData.splice(index, 1);
 
   // Add a small bounce to the car
-  const jumpStrength = Math.min(Math.abs(velocity) * 0.4, 3);
+  const jumpStrength = Math.min(Math.abs(velocity.value) * 0.4, 3);
   if (jumpStrength > 0.5) {
     makeCarJump(jumpStrength);
   }
@@ -2385,7 +2526,6 @@ const handleMooseHit = (moose: typeof mooseData[0], index: number) => {
 };
 
 // Add these refs near the beginning of the setup function
-const showDevInfo = ref(false);
 const carPosition = ref(new THREE.Vector3());
 const currentSpeed = ref(0);
 const currentFps = ref(0);
@@ -2457,7 +2597,8 @@ return {
   currentFps,
   velocity,  // Make sure to include velocity itself
   angularVelocity,
-  onGround
+  onGround,
+  selectedVehicle
 };
 },
 });
@@ -2751,7 +2892,7 @@ z-index: 999;
 }
 
 /* Developer Info Window Styles */
-.dev-info-window {
+.dev-info {
 position: absolute;
 top: 10%;
 right: 10%;
@@ -2767,7 +2908,7 @@ max-width: 300px;
 pointer-events: none;
 }
 
-.dev-info-window h3 {
+.dev-info h3 {
 margin: 0 0 5px 0;
 font-size: 14px;
 text-align: center;
@@ -2775,7 +2916,7 @@ border-bottom: 1px solid #0f0;
 padding-bottom: 5px;
 }
 
-.dev-info-window p {
+.dev-info p {
 margin: 3px 0;
 font-size: 12px;
 }
