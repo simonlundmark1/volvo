@@ -16,7 +16,7 @@
     </div>
     <!-- Initial Overlay -->
     <div v-if="showOverlay" class="overlay">
-      <img src="/assets/images/start3.jpg" alt="Start Screen" class="overlay-image" />
+      <img src="/assets/images/start2.png" alt="Start Screen" class="overlay-image" />
       <button class="play-button" @click="startGame">Play</button>
     </div>
     <!-- Vehicle Selection Screen -->
@@ -66,7 +66,7 @@
           }}
         </div>
       </div>
-      <button class="radio-button" @click="toggleRadioChannel">TUNE</button>
+      <button class="radio-button" @click="toggleRadioChannel">CHANGE CHANNEL</button>
     </div>
     <!-- High Score Input Screen -->
     <div v-if="showHighScoreInput" class="high-score-input">
@@ -90,6 +90,16 @@
         <button @click="restartGame">Play Again</button>
         <p><br>Press Enter to play again</p>
       </div>
+    </div>
+    <!-- After the score-display div -->
+    <div v-if="showDevInfo" class="dev-info-window">
+      <h3>Developer Info</h3>
+      <p>Position: X: {{ Math.round(carPosition.x * 100) / 100 }}, Y: {{ Math.round(carPosition.y * 100) / 100 }}, Z: {{ Math.round(carPosition.z * 100) / 100 }}</p>
+      <p>Speed: {{ Math.round(currentSpeed * 10) / 10 }} km/h</p>
+      <p>Velocity: {{ Math.round(velocity * 100) / 100 }}</p>
+      <p>Angular Velocity: {{ Math.round(angularVelocity * 1000) / 1000 }}</p>
+      <p>On Ground: {{ onGround ? 'Yes' : 'No' }}</p>
+      <p>FPS: {{ currentFps }}</p>
     </div>
   </div>
 </template>
@@ -119,7 +129,7 @@ export default defineComponent({
     let camera: THREE.PerspectiveCamera;
     let renderer: THREE.WebGLRenderer;
     let car: THREE.Object3D;
-    const keys: Record<string, boolean> = {
+    let keys: Record<string, boolean> = {
       ArrowUp: false,
       ArrowDown: false,
       ArrowLeft: false,
@@ -189,6 +199,14 @@ export default defineComponent({
       boundingBox: THREE.Box3;
       isWunderbaum?: boolean;
     }> = [];
+    const mooseData: Array<{
+      mesh: THREE.Group;
+      boundingBox: THREE.Box3;
+      direction: THREE.Vector3;
+      speed: number;
+      lastDirectionChange: number;
+      points: number;
+    }> = [];
 
     let ambientLight: THREE.AmbientLight;
 
@@ -205,6 +223,9 @@ export default defineComponent({
     let explosionAudio: HTMLAudioElement | null = null;
     let jumpAudio: HTMLAudioElement | null = null;
     let snusCollectAudio: HTMLAudioElement | null = null;
+
+    // Add this after snusCollectAudio declaration
+    let mooseHitAudio: HTMLAudioElement | null = null;
 
     let lastCarPosition = new THREE.Vector3();
 
@@ -394,7 +415,7 @@ export default defineComponent({
         (texture: THREE.Texture) => {
           texture.wrapS = THREE.RepeatWrapping;
           texture.wrapT = THREE.RepeatWrapping;
-          texture.repeat.set(100, 100);
+          texture.repeat.set(rows * 2, columns * 2);
           (texture as any).encoding = THREE.sRGBEncoding;
           texture.minFilter = THREE.LinearMipMapNearestFilter;
           texture.magFilter = THREE.LinearFilter;
@@ -408,14 +429,18 @@ export default defineComponent({
         (error) => handleLoadingError(error, 'ground texture')
       );
 
-      const planeGeometry = new THREE.PlaneGeometry(3000, 3000);
+      // Calculate map dimensions based on rows and columns
+      const mapWidth = columns * blockSpacing;
+      const mapHeight = rows * blockSpacing;
+
+      const planeGeometry = new THREE.PlaneGeometry(mapWidth * 4, mapHeight * 4);
       const planeMaterial = new THREE.MeshBasicMaterial({
         map: groundTexture,
         side: THREE.DoubleSide,
       });
       const ground = new THREE.Mesh(planeGeometry, planeMaterial);
       ground.rotation.x = -Math.PI / 2;
-      ground.position.set(0, 0, 0);
+      ground.position.set(mapWidth / 2, 0, mapHeight / 2);
       scene.add(ground);
 
       const roadTexture = textureLoader.load(
@@ -444,14 +469,14 @@ export default defineComponent({
       for (let row = 0; row <= rows; row++) {
         const roadGeometry = new THREE.BoxGeometry(
           columns * blockSpacing,
-          0.02,
+          0.05, // Increased from 0.02 to reduce z-fighting
           roadWidth
         );
         const roadMesh = new THREE.Mesh(roadGeometry, roadMaterial);
 
         roadMesh.position.set(
           (columns * blockSpacing) / 2 - blockSpacing / 2,
-          0.02 / 2,
+          0.025, // Position adjusted to half the height
           row * blockSpacing - blockSpacing / 2
         );
 
@@ -461,14 +486,14 @@ export default defineComponent({
       for (let col = 0; col <= columns; col++) {
         const roadGeometry = new THREE.BoxGeometry(
           roadWidth,
-          0.02,
+          0.05, // Increased from 0.02 to reduce z-fighting
           rows * blockSpacing
         );
         const roadMesh = new THREE.Mesh(roadGeometry, roadMaterial);
 
         roadMesh.position.set(
           col * blockSpacing - blockSpacing / 2,
-          0.02 / 2,
+          0.025, // Position adjusted to half the height
           (rows * blockSpacing) / 2 - blockSpacing / 2
         );
 
@@ -663,8 +688,12 @@ export default defineComponent({
       scene.add(houseInstancedMesh);
       scene.add(treeInstancedMesh);
 
+      // Create tree barrier around the map
+      createTreeBarrier();
+
       generateCollectibles();
       generatePyramids();
+      generateMoose();
 
       const objLoaderMain = new OBJLoader();
       objLoaderMain.load(
@@ -929,6 +958,131 @@ function generatePyramids() {
   }
 }
 
+const createTreeBarrier = () => {
+  const pineTreeGeometry = createPineTreeGeometry();
+  const treeMaterial = new THREE.MeshBasicMaterial({ vertexColors: true });
+
+  // Number of trees around the perimeter
+  const treeSpacing = 5; // Distance between each tree
+  const mapWidth = columns * blockSpacing;
+  const mapHeight = rows * blockSpacing;
+
+  // Expand the barrier to 2x the map size
+  const barrierWidth = mapWidth * 2;
+  const barrierHeight = mapHeight * 2;
+
+  // Calculate the number of trees for each side
+  const treesPerWidth = Math.ceil(barrierWidth / treeSpacing);
+  const treesPerHeight = Math.ceil(barrierHeight / treeSpacing);
+
+  // Total number of trees needed (all four sides minus corner duplicates)
+  const totalBarrierTrees = (treesPerWidth * 2) + (treesPerHeight * 2);
+
+  const treeInstancedMesh = new THREE.InstancedMesh(
+    pineTreeGeometry,
+    treeMaterial,
+    totalBarrierTrees
+  );
+
+  const dummy = new THREE.Object3D();
+  let treeIndex = 0;
+
+  // Add trees along the perimeter
+  // Bottom edge (x varies, z is 0)
+  for (let x = -mapWidth / 2; x < mapWidth * 1.5; x += treeSpacing) {
+    const treeScale = 0.8 + Math.random() * 0.4;
+    dummy.position.set(x, 0, -mapHeight / 2);
+    dummy.scale.set(treeScale, treeScale, treeScale);
+    dummy.rotation.set(0, Math.random() * Math.PI * 2, 0);
+    dummy.updateMatrix();
+
+    treeInstancedMesh.setMatrixAt(treeIndex, dummy.matrix);
+    treeIndex++;
+
+    const boundingSphere = new THREE.Sphere(
+      new THREE.Vector3(x, treeScale * 9, -mapHeight / 2),
+      treeScale * 7
+    );
+
+    treeData.push({
+      position: dummy.position.clone(),
+      scale: treeScale,
+      boundingSphere: boundingSphere
+    });
+  }
+
+  // Top edge (x varies, z is mapHeight)
+  for (let x = -mapWidth / 2; x < mapWidth * 1.5; x += treeSpacing) {
+    const treeScale = 0.8 + Math.random() * 0.4;
+    dummy.position.set(x, 0, mapHeight * 1.5);
+    dummy.scale.set(treeScale, treeScale, treeScale);
+    dummy.rotation.set(0, Math.random() * Math.PI * 2, 0);
+    dummy.updateMatrix();
+
+    treeInstancedMesh.setMatrixAt(treeIndex, dummy.matrix);
+    treeIndex++;
+
+    const boundingSphere = new THREE.Sphere(
+      new THREE.Vector3(x, treeScale * 9, mapHeight * 1.5),
+      treeScale * 7
+    );
+
+    treeData.push({
+      position: dummy.position.clone(),
+      scale: treeScale,
+      boundingSphere: boundingSphere
+    });
+  }
+
+  // Left edge (x is 0, z varies)
+  for (let z = -mapHeight / 2; z < mapHeight * 1.5; z += treeSpacing) {
+    const treeScale = 0.8 + Math.random() * 0.4;
+    dummy.position.set(-mapWidth / 2, 0, z);
+    dummy.scale.set(treeScale, treeScale, treeScale);
+    dummy.rotation.set(0, Math.random() * Math.PI * 2, 0);
+    dummy.updateMatrix();
+
+    treeInstancedMesh.setMatrixAt(treeIndex, dummy.matrix);
+    treeIndex++;
+
+    const boundingSphere = new THREE.Sphere(
+      new THREE.Vector3(-mapWidth / 2, treeScale * 9, z),
+      treeScale * 7
+    );
+
+    treeData.push({
+      position: dummy.position.clone(),
+      scale: treeScale,
+      boundingSphere: boundingSphere
+    });
+  }
+
+  // Right edge (x is mapWidth, z varies)
+  for (let z = -mapHeight / 2; z < mapHeight * 1.5; z += treeSpacing) {
+    const treeScale = 0.8 + Math.random() * 0.4;
+    dummy.position.set(mapWidth * 1.5, 0, z);
+    dummy.scale.set(treeScale, treeScale, treeScale);
+    dummy.rotation.set(0, Math.random() * Math.PI * 2, 0);
+    dummy.updateMatrix();
+
+    treeInstancedMesh.setMatrixAt(treeIndex, dummy.matrix);
+    treeIndex++;
+
+    const boundingSphere = new THREE.Sphere(
+      new THREE.Vector3(mapWidth * 1.5, treeScale * 9, z),
+      treeScale * 7
+    );
+
+    treeData.push({
+      position: dummy.position.clone(),
+      scale: treeScale,
+      boundingSphere: boundingSphere
+    });
+  }
+
+  scene.add(treeInstancedMesh);
+};
+
 const createPineTreeGeometry = (): THREE.BufferGeometry => {
   const trunkGeometry = new THREE.CylinderGeometry(0.4, 0.4, 6, 8);
   trunkGeometry.translate(0, 3, 0);
@@ -1052,7 +1206,21 @@ const animate = (time: number) => {
   const deltaTime = time - prevTime;
   prevTime = time;
 
+  // Calculate FPS
+  frameCount++;
+  if (time - lastFpsUpdateTime >= 1000) {
+    currentFps.value = Math.round(frameCount * 1000 / (time - lastFpsUpdateTime));
+    frameCount = 0;
+    lastFpsUpdateTime = time;
+  }
+
   requestAnimationFrame(animate);
+
+  // Update the car position and speed data if car exists
+  if (car) {
+    carPosition.value.copy(car.position);
+    currentSpeed.value = Math.abs(velocity) * 100; // Convert to km/h
+  }
 
   if (showVehicleSelection.value) {
     if (vehicleSelectionCar) {
@@ -1166,24 +1334,46 @@ const animate = (time: number) => {
       const speedInKmH = Math.abs(velocity) * 100;
       drawSpeedometer(speedInKmH);
 
-        const cameraOffset = new THREE.Vector3(0, 5, -10);
-        const offset = cameraOffset.clone().applyQuaternion(car.quaternion);
-        const desiredCameraPosition = car.position.clone().add(offset);
-        const interpolationSpeed = onGround ? 0.05 : 0.05; // Slower interpolation if the car is jumping
+        // Replace the camera positioning code with improved bobbing-free interpolation
+        const cameraDistance = 10; // Distance from car
+        const cameraHeight = 5;    // Height above car
 
-        camera.position.lerp(desiredCameraPosition, interpolationSpeed);
+        // Calculate the desired camera position - separated from quaternion to prevent bobbing
+        const carForward = new THREE.Vector3(0, 0, 1).applyQuaternion(car.quaternion);
+        const cameraOffset = carForward.clone().multiplyScalar(-cameraDistance);
+        cameraOffset.y = cameraHeight; // Fixed height independent of car's quaternion
 
-      const targetLookHeight = onGround ? LOOK_UP_HEIGHT : 0;
-      currentLookTargetY = THREE.MathUtils.lerp(
-        currentLookTargetY,
-        targetLookHeight,
-        LOOK_TRANSITION_SPEED
-      );
+        const targetPosition = car.position.clone().add(cameraOffset);
 
-      const lookTarget = car.position.clone();
-      lookTarget.y += currentLookTargetY;
+        // Maintain camera's current y position to prevent vertical bobbing
+        const currentY = camera.position.y;
+        const smoothedPosition = targetPosition.clone();
+        smoothedPosition.y = currentY;
 
-      camera.lookAt(lookTarget);
+        // Use different interpolation speeds based on velocity and turning
+        const turningFactor = Math.abs(angularVelocity) / 0.5;
+
+        // Calculate appropriate interpolation speed - more consistent during turns
+        const baseInterpolation = onGround ? 0.15 : 0.07; // Increased from previous values
+        const positionInterpolationSpeed = baseInterpolation * (1 - turningFactor * 0.25); // Reduced from 0.3
+
+        // Apply smoothing with proper time-based interpolation
+        camera.position.lerp(smoothedPosition, positionInterpolationSpeed * (deltaTime / 16.67));
+
+        // Gradually adjust height separately with consistent speed
+        const targetY = car.position.y + cameraHeight;
+        camera.position.y = THREE.MathUtils.lerp(
+          camera.position.y,
+          targetY,
+          0.05 * (deltaTime / 16.67)
+        );
+
+        // Look target always at car's position plus a fixed height
+        const lookTarget = car.position.clone();
+        lookTarget.y += LOOK_UP_HEIGHT;
+
+        // More direct look-at for responsive camera that doesn't lag behind car
+        camera.lookAt(lookTarget);
 
         carBoundingBox.setFromObject(car);
 
@@ -1278,6 +1468,9 @@ const animate = (time: number) => {
         }
       });
 
+      // Update and check moose collisions
+      updateMoose(deltaTime);
+      checkMooseCollisions();
 
         const now = performance.now();
       const timeSinceJump = (now - lastJumpTime) / 1000;
@@ -1472,6 +1665,13 @@ const onKeyDown = (event: KeyboardEvent) => {
       restartGame();
     }
   } else {
+    // Toggle dev info when § key is pressed
+    if (event.key === '§' || event.key === '±' || event.key === '`' || event.code === 'Backquote') {
+      event.preventDefault();
+      showDevInfo.value = !showDevInfo.value;
+      console.log("Dev info toggled:", showDevInfo.value); // Debug log
+    }
+
     if (event.key in keys) {
       event.preventDefault();
       keys[event.key] = true;
@@ -1544,36 +1744,70 @@ const resetGame = (isInitialSpawn = false) => {
   isGameOver.value = false;
   isTimeUp.value = false;
 
-    if (explosionSprite) {
-        scene.remove(explosionSprite);
-        explosionSprite = null;
-    }
-    explosionStartTime = null;
+  if (explosionSprite) {
+    scene.remove(explosionSprite);
+    explosionSprite = null;
+  }
+  explosionStartTime = null;
 
-    ambientLight.intensity = 1;
+  ambientLight.intensity = 1;
 
   if (!scene.children.includes(car)) {
-      scene.add(car);
+    scene.add(car);
   }
-
 
   velocity = 0;
   angularVelocity = 0;
   verticalVelocity = 0;
-  car.position.y = -1.65;
 
   if (isInitialSpawn) {
-      car.position.set(0, car.position.y, 0);
-  } else {
-      const maxPosition = rows * blockSpacing;
-      const randomX = (Math.random() - 0.5) * maxPosition;
-      const randomZ = (Math.random() - 0.5) * maxPosition;
-        car.position.set(randomX, car.position.y, randomZ);
+    // Set fixed spawn position for initial game start
+    car.position.set(-120.3, -1.15, 489.81);
+
+    // Set car to face 90 degrees to the left (Math.PI/2 radians)
+    car.rotation.set(0, Math.PI/2, 0);
+
+    // Immediately copy to lastCarPosition to prevent any "snapping" effect
+    lastCarPosition.copy(car.position);
+
+    // If we have a camera, update its position and orientation to match the car's new direction
+    if (camera) {
+      // Calculate the new camera position based on the car's rotated orientation
+      const carForward = new THREE.Vector3(1, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI/2);
+      const cameraDistance = 10; // Distance from car
+      const cameraHeight = 5;    // Height above car
+
+      const cameraOffset = carForward.clone().multiplyScalar(-cameraDistance);
+      cameraOffset.y = cameraHeight;
+
+      const targetPosition = car.position.clone().add(cameraOffset);
+      camera.position.copy(targetPosition);
+
+      // Look at the car from this new position
+      const lookTarget = car.position.clone();
+      lookTarget.y += 3; // Look a bit above the car
+      camera.lookAt(lookTarget);
     }
+  } else {
+    // For respawns after collision, keep the random spawn logic
+    car.position.y = -1.65;
 
+    // Ensure car spawns within the map boundaries, not outside the tree fencing
+    const mapWidth = columns * blockSpacing;
+    const mapHeight = rows * blockSpacing;
 
-    car.rotation.set(0, 0, 0);
-  lastCarPosition.copy(car.position);
+    // Calculate a safe spawn area (within 80% of the map to avoid spawning too close to the edges)
+    const safeAreaWidth = mapWidth * 0.8;
+    const safeAreaHeight = mapHeight * 0.8;
+
+    const randomX = (Math.random() - 0.5) * safeAreaWidth;
+    const randomZ = (Math.random() - 0.5) * safeAreaHeight;
+
+    car.position.set(randomX, car.position.y, randomZ);
+  }
+
+  // Remove the general car.rotation.set(0, 0, 0) line since we're handling
+  // rotation specifically in each spawn case now
 };
 
 const endGame = () => {
@@ -1631,6 +1865,11 @@ const restartGame = () => {
 
   generateCollectibles();
   generatePyramids();
+  mooseData.forEach((moose) => {
+    scene.remove(moose.mesh);
+  });
+  mooseData.splice(0, mooseData.length);
+  generateMoose();
 };
 
 const playBackgroundMusic = () => {
@@ -1796,7 +2035,353 @@ fifaAudio = null;
         timeAudio.pause();
         timeAudio = null;
     }
+
+  if (mooseHitAudio) {
+    mooseHitAudio.pause();
+    mooseHitAudio = null;
+  }
 });
+
+const createMooseModel = (): THREE.Group => {
+  const mooseGroup = new THREE.Group();
+
+  // Body
+  const bodyGeometry = new THREE.BoxGeometry(3, 2, 5);
+  const bodyMaterial = new THREE.MeshBasicMaterial({ color: 0x5D4037 });
+  const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+  body.position.y = 2;
+  mooseGroup.add(body);
+
+  // Head
+  const headGeometry = new THREE.BoxGeometry(2, 2, 2.5);
+  const headMaterial = new THREE.MeshBasicMaterial({ color: 0x4E342E });
+  const head = new THREE.Mesh(headGeometry, headMaterial);
+  head.position.set(0, 3.5, 3);
+  mooseGroup.add(head);
+
+  // Legs
+  const legGeometry = new THREE.CylinderGeometry(0.4, 0.4, 2, 8);
+  const legMaterial = new THREE.MeshBasicMaterial({ color: 0x3E2723 });
+
+  // Front right leg
+  const frontRightLeg = new THREE.Mesh(legGeometry, legMaterial);
+  frontRightLeg.position.set(1, 0, 2);
+  mooseGroup.add(frontRightLeg);
+
+  // Front left leg
+  const frontLeftLeg = new THREE.Mesh(legGeometry, legMaterial);
+  frontLeftLeg.position.set(-1, 0, 2);
+  mooseGroup.add(frontLeftLeg);
+
+  // Back right leg
+  const backRightLeg = new THREE.Mesh(legGeometry, legMaterial);
+  backRightLeg.position.set(1, 0, -2);
+  mooseGroup.add(backRightLeg);
+
+  // Back left leg
+  const backLeftLeg = new THREE.Mesh(legGeometry, legMaterial);
+  backLeftLeg.position.set(-1, 0, -2);
+  mooseGroup.add(backLeftLeg);
+
+  // Antlers
+  const antlerMaterial = new THREE.MeshBasicMaterial({ color: 0x3E2723 });
+
+  // Left antler
+  const leftAntlerGroup = new THREE.Group();
+  leftAntlerGroup.position.set(-1.2, 4.2, 2.8);
+
+  const leftAntlerBase = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.2, 0.3, 1, 8),
+    antlerMaterial
+  );
+  leftAntlerBase.rotation.x = Math.PI / 4;
+  leftAntlerBase.rotation.z = -Math.PI / 6;
+  leftAntlerGroup.add(leftAntlerBase);
+
+  const leftAntlerTop = new THREE.Mesh(
+    new THREE.BoxGeometry(2, 0.3, 0.7),
+    antlerMaterial
+  );
+  leftAntlerTop.position.set(-0.8, 0.6, 0.3);
+  leftAntlerGroup.add(leftAntlerTop);
+
+  mooseGroup.add(leftAntlerGroup);
+
+  // Right antler
+  const rightAntlerGroup = new THREE.Group();
+  rightAntlerGroup.position.set(1.2, 4.2, 2.8);
+
+  const rightAntlerBase = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.2, 0.3, 1, 8),
+    antlerMaterial
+  );
+  rightAntlerBase.rotation.x = Math.PI / 4;
+  rightAntlerBase.rotation.z = Math.PI / 6;
+  rightAntlerGroup.add(rightAntlerBase);
+
+  const rightAntlerTop = new THREE.Mesh(
+    new THREE.BoxGeometry(2, 0.3, 0.7),
+    antlerMaterial
+  );
+  rightAntlerTop.position.set(0.8, 0.6, 0.3);
+  rightAntlerGroup.add(rightAntlerTop);
+
+  mooseGroup.add(rightAntlerGroup);
+
+  // Scale down the entire moose
+  mooseGroup.scale.set(0.7, 0.7, 0.7);
+
+  return mooseGroup;
+};
+
+const generateMoose = (count?: number) => {
+  const numMoose = count || 15; // Default is 15 if not specified
+  const mapWidth = columns * blockSpacing;
+  const mapHeight = rows * blockSpacing;
+
+  // Rest of the function remains the same
+  for (let i = 0; i < numMoose; i++) {
+    const moose = createMooseModel();
+
+    // Place moose randomly on the map, but avoid roads and houses
+    let validPosition = false;
+    let mooseX = 0, mooseZ = 0;
+    let attempts = 0;
+
+    while (!validPosition && attempts < 50) {
+      attempts++;
+
+      // Random position within the map
+      mooseX = Math.random() * mapWidth - mapWidth / 4;
+      mooseZ = Math.random() * mapHeight - mapHeight / 4;
+
+      // Check distance from any road
+      const nearRoad = (mooseX % blockSpacing < roadWidth * 1.5) ||
+                        (mooseZ % blockSpacing < roadWidth * 1.5);
+
+      if (!nearRoad) {
+        validPosition = true;
+
+        // Check distance from houses
+        for (const house of houseData) {
+          const dx = mooseX - house.position.x;
+          const dz = mooseZ - house.position.z;
+          const distance = Math.sqrt(dx * dx + dz * dz);
+
+          if (distance < 15) {
+            validPosition = false;
+            break;
+          }
+        }
+
+        // Also check distance from trees
+        if (validPosition) {
+          for (const tree of treeData) {
+            const dx = mooseX - tree.position.x;
+            const dz = mooseZ - tree.position.z;
+            const distance = Math.sqrt(dx * dx + dz * dz);
+
+            if (distance < tree.boundingSphere.radius * 1.5) {
+              validPosition = false;
+              break;
+            }
+          }
+        }
+      }
+    }
+
+    // If we found a valid position
+    if (validPosition) {
+      // Random initial rotation
+      const randomRotation = Math.random() * Math.PI * 2;
+      moose.rotation.y = randomRotation - Math.PI/2; // Adjust to face direction of travel
+
+      // Position the moose
+      moose.position.set(mooseX, 0, mooseZ);
+      scene.add(moose);
+
+      // Calculate a random movement direction
+      const directionX = Math.cos(randomRotation);
+      const directionZ = Math.sin(randomRotation);
+      const direction = new THREE.Vector3(directionX, 0, directionZ).normalize();
+
+      // Speed 0.5-1.5 units per second
+      const speed = 20 + Math.random() * 15.0; // Much faster speed: 20-35 units/second
+
+      // Add to moose data array
+      const boundingBox = new THREE.Box3().setFromObject(moose);
+      mooseData.push({
+        mesh: moose,
+        boundingBox,
+        direction,
+        speed,
+        lastDirectionChange: performance.now(),
+        points: 5 // Points awarded for hitting a moose
+      });
+    }
+  }
+};
+
+// Add these functions before the animate function
+const updateMoose = (deltaTime: number) => {
+  const currentTime = performance.now();
+  const mapWidth = columns * blockSpacing;
+  const mapHeight = rows * blockSpacing;
+
+  for (const moose of mooseData) {
+    // Change direction randomly (every 3-8 seconds)
+    const directionChangeInterval = 8000 + Math.random() * 12000; // Change less frequently (8-20 seconds)
+    if (currentTime - moose.lastDirectionChange > directionChangeInterval) {
+      const randomAngle = Math.random() * Math.PI * 2;
+      const dirX = Math.cos(randomAngle);
+      const dirZ = Math.sin(randomAngle);
+      moose.direction.set(dirX, 0, dirZ).normalize();
+      moose.lastDirectionChange = currentTime;
+
+      // Update moose rotation to match direction
+      moose.mesh.rotation.y = Math.atan2(moose.direction.z, moose.direction.x) - Math.PI/2;
+    }
+
+    // Move moose according to its speed and direction
+    const moveDistance = moose.speed * (deltaTime / 1000);
+
+    // Check next position for collisions before moving
+    const nextX = moose.mesh.position.x + moose.direction.x * moveDistance;
+    const nextZ = moose.mesh.position.z + moose.direction.z * moveDistance;
+
+    let canMove = true;
+
+    // Check for house collisions
+    for (const house of houseData) {
+      const houseBB = house.boundingBox;
+      const buffer = 2;
+
+      if (nextX > houseBB.min.x - buffer &&
+          nextX < houseBB.max.x + buffer &&
+          nextZ > houseBB.min.z - buffer &&
+          nextZ < houseBB.max.z + buffer) {
+        canMove = false;
+
+        // Reverse direction
+        moose.direction.x *= -1;
+        moose.direction.z *= -1;
+        moose.mesh.rotation.y = Math.atan2(moose.direction.z, moose.direction.x) - Math.PI/2;
+        moose.lastDirectionChange = currentTime;
+        break;
+      }
+    }
+
+    // Check for tree collisions
+    if (canMove) {
+      for (const tree of treeData) {
+        const dx = nextX - tree.position.x;
+        const dz = nextZ - tree.position.z;
+        const distance = Math.sqrt(dx * dx + dz * dz);
+
+        if (distance < tree.boundingSphere.radius * 1.2) {
+          canMove = false;
+
+          // Reverse direction
+          moose.direction.x *= -1;
+          moose.direction.z *= -1;
+          moose.mesh.rotation.y = Math.atan2(moose.direction.z, moose.direction.x) - Math.PI/2;
+          moose.lastDirectionChange = currentTime;
+          break;
+        }
+      }
+    }
+
+    // Only move if no collisions detected
+    if (canMove) {
+      moose.mesh.position.x += moose.direction.x * moveDistance;
+      moose.mesh.position.z += moose.direction.z * moveDistance;
+    }
+
+    // Keep moose within the map bounds - outside the road grid
+    if (moose.mesh.position.x < -mapWidth / 2.5) {
+      moose.mesh.position.x = -mapWidth / 2.5;
+      moose.direction.x *= -1;
+      moose.mesh.rotation.y = Math.atan2(moose.direction.z, moose.direction.x) - Math.PI/2;
+    }
+    if (moose.mesh.position.x > mapWidth * 1.25) {
+      moose.mesh.position.x = mapWidth * 1.25;
+      moose.direction.x *= -1;
+      moose.mesh.rotation.y = Math.atan2(moose.direction.z, moose.direction.x) - Math.PI/2;
+    }
+    if (moose.mesh.position.z < -mapHeight / 2.5) {
+      moose.mesh.position.z = -mapHeight / 2.5;
+      moose.direction.z *= -1;
+      moose.mesh.rotation.y = Math.atan2(moose.direction.z, moose.direction.x) - Math.PI/2;
+    }
+    if (moose.mesh.position.z > mapHeight * 1.25) {
+      moose.mesh.position.z = mapHeight * 1.25;
+      moose.direction.z *= -1;
+      moose.mesh.rotation.y = Math.atan2(moose.direction.z, moose.direction.x) - Math.PI/2;
+    }
+
+    // Update moose bounding box
+    moose.boundingBox.setFromObject(moose.mesh);
+  }
+};
+
+const checkMooseCollisions = () => {
+  if (car && !isGameOver.value) {
+    for (let i = mooseData.length - 1; i >= 0; i--) {
+      const moose = mooseData[i];
+
+      if (carBoundingBox.intersectsBox(moose.boundingBox)) {
+        // Car hit a moose!
+        handleMooseHit(moose, i);
+      }
+    }
+  }
+};
+
+const handleMooseHit = (moose: typeof mooseData[0], index: number) => {
+  // Add score
+  score.value += moose.points;
+
+  // Play sound effect
+  if (!mooseHitAudio) {
+    mooseHitAudio = new Audio('/assets/sounds/moose.mp3');
+    mooseHitAudio.volume = 0.7;
+  }
+
+  // Reset the audio and play it
+  mooseHitAudio.currentTime = 0;
+  mooseHitAudio.play().catch((error) => {
+    console.error('Error playing moose hit sound:', error);
+  });
+
+  // Display score above the moose
+  const screenPos = worldToScreen(moose.mesh.position.clone(), camera, renderer);
+  showScoreDisplay(moose.points, screenPos);
+
+  // Remove the moose from the scene and data array
+  scene.remove(moose.mesh);
+  mooseData.splice(index, 1);
+
+  // Add a small bounce to the car
+  const jumpStrength = Math.min(Math.abs(velocity) * 0.4, 3);
+  if (jumpStrength > 0.5) {
+    makeCarJump(jumpStrength);
+  }
+
+  // Occasionally respawn a new moose
+  if (Math.random() < 0.7 && mooseData.length < 15) {
+    setTimeout(() => {
+      generateMoose(1); // Generate a single new moose as replacement
+    }, 5000 + Math.random() * 10000); // Random delay between 5-15 seconds
+  }
+};
+
+// Add these refs near the beginning of the setup function
+const showDevInfo = ref(false);
+const carPosition = ref(new THREE.Vector3());
+const currentSpeed = ref(0);
+const currentFps = ref(0);
+let frameCount = 0;
+let lastFpsUpdateTime = 0;
 
 return {
   gameContainer,
@@ -1817,7 +2402,14 @@ return {
   toggleRadioChannel,
   scoreDisplayVisible,
   scoreDisplayValue,
-  scoreDisplayPosition
+  scoreDisplayPosition,
+  showDevInfo,
+  carPosition,
+  currentSpeed,
+  currentFps,
+  velocity,  // Make sure to include velocity itself
+  angularVelocity,
+  onGround
 };
 },
 });
@@ -1834,7 +2426,7 @@ height: 100vh;
 overflow: hidden;
 margin-left: -5rem;
 /* CRT Effekt */
-filter: contrast(1.1) saturate(1.0) brightness(1.1);
+filter: contrast(1.05) saturate(1.0) brightness(1.05);
 position: relative;
 }
 
@@ -1855,7 +2447,7 @@ transparent 4px
 );
 pointer-events: none;
 mix-blend-mode: multiply;
-opacity: 0.5;
+opacity: 0.2;
 z-index: 100000;
 }
 
@@ -1901,32 +2493,38 @@ height: 120%;
 
 .overlay {
 position: absolute;
-top: -33rem;
-left: -46rem;
-width: 105%;
-height: 105%;
+top: 0;
+left: 0;
+width: 100%;
+height: 100%;
 background-color: black;
 display: flex;
-flex-direction: column;
 justify-content: center;
 align-items: center;
 z-index: 10;
+overflow: hidden;
 }
 
 .overlay-image {
-max-width: 60%;
-margin-right: 10rem;
-margin-top: 50%;
-margin-left: 69%;
+position: absolute;
+top: 50%;
+left: 50%;
+transform: translate(-50%, -50%);
+width: 90vw; /* Use viewport width instead of percentage */
+max-width: 1000px; /* Set a reasonable max width */
+height: auto;
+object-fit: contain; /* Use contain instead of fill */
 }
 
 .play-button {
 position: absolute;
-margin-left: 70rem;
-margin-top: 180vh;
+bottom: 35%;
+left: 50%;
+transform: translateX(-50%);
 padding: 10px 20px;
-font-size: 24px;
+font-size: 32px;
 cursor: pointer;
+border-radius: 24px;
 }
 
 /* Vehicle Selection Overlay Styles */
@@ -2102,5 +2700,35 @@ opacity: 1;
 margin-top: -10%;
 margin-left: 8%;
 z-index: 999;
+}
+
+/* Developer Info Window Styles */
+.dev-info-window {
+position: absolute;
+top: 10%;
+right: 10%;
+background: rgba(0, 0, 0, 0.8);
+color: #0f0;
+font-family: monospace;
+padding: 10px;
+border: 1px solid #0f0;
+border-radius: 5px;
+z-index: 1000;
+font-size: 12px;
+max-width: 300px;
+pointer-events: none;
+}
+
+.dev-info-window h3 {
+margin: 0 0 5px 0;
+font-size: 14px;
+text-align: center;
+border-bottom: 1px solid #0f0;
+padding-bottom: 5px;
+}
+
+.dev-info-window p {
+margin: 3px 0;
+font-size: 12px;
 }
 </style>

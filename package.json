@@ -17,6 +17,7 @@
   "dependencies": {
     "pinia": "^2.2.6",
     "save-dev": "^0.0.1-security",
+    "seedrandom": "^3.0.5",
     "three": "^0.170.0",
     "vue": "^3.5.12",
     "vue-router": "^4.4.5"
