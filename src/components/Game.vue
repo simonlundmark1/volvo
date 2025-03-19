@@ -2571,6 +2571,25 @@ function updateCamera() {
 // Call updateCamera() in your animation loop
 // ... existing code ...
 
+// Function to display floating points animation
+const addPoint = (value: number) => {
+  // Create a DOM element for the floating point text
+  const pointElement = document.createElement('div');
+  pointElement.classList.add('point');
+  pointElement.textContent = `+${value}`;
+
+  // Append to .game-container
+  const container = document.querySelector('.game-container');
+  if (container) {
+    container.appendChild(pointElement);
+
+    // Remove element after animation completes
+    setTimeout(() => {
+      pointElement.remove();
+    }, 1500); // 1.5s matches the CSS animation duration
+  }
+};
+
 return {
   gameContainer,
   speedometerCanvas,
@@ -2588,6 +2607,7 @@ return {
   restartGame,
   currentChannel,
   toggleRadioChannel,
+  addPoint, // Add the new function to the return object
   scoreDisplayVisible,
   scoreDisplayValue,
   scoreDisplayPosition,
@@ -2697,24 +2717,26 @@ overflow: hidden;
 .overlay-image {
 position: absolute;
 top: 50%;
-left: 50%;
+left: 47%;
 transform: translate(-50%, -50%);
-width: 90vw; /* Use viewport width instead of percentage */
-max-width: 1000px; /* Set a reasonable max width */
+width: 64vw; /* Use viewport width instead of percentage */
+max-width: 64vw; /* Set a reasonable max width */
 height: auto;
 object-fit: contain; /* Use contain instead of fill */
 }
 
 .play-button {
 position: absolute;
-bottom: 35%;
-left: 50%;
+bottom: 49%;
+left: 47%;
 transform: translateX(-50%);
 padding: 10px 20px;
 font-size: 32px;
 cursor: pointer;
 border-radius: 24px;
 }
+
+/* Point Animation Styles
 
 /* Vehicle Selection Overlay Styles */
 .vehicle-selection-overlay {
@@ -2881,14 +2903,37 @@ background: #444;
 
 .score-display {
 position: absolute;
-color: rgb(255, 255, 255);
+top: 50%;
+left: 10%;
+  text-shadow: 5px 5px 0 #000,
+               -5px 5px 0 #000,
+               5px -5px 0 #000,
+               -5px -5px 0 #000,
+               0 5px 0 #000,
+               0 -5px 0 #000,
+               5px 0 0 #000,
+               -5px 0 0 #000;
+               color: rgb(255, 255, 255);
 font-size: 52px;
 font-family: 'Press Start 2P', 'VT323', 'Pixelated MS Sans Serif', 'Monaco', monospace;
 transition: transform 0.5s ease, opacity 0.5s ease;
 opacity: 1;
-margin-top: -10%;
-margin-left: 8%;
 z-index: 999;
+animation: point-animation 1.5s ease-in-out forwards;
+}
+
+
+
+/* Point Popup Animation */
+@keyframes point-animation {
+  0% {
+    opacity: 1;
+    transform: translate(160%, -200%);
+  }
+  100% {
+    opacity: 0;
+    transform: translate( 160%, -300%); /* Float up even higher if you like */
+  }
 }
 
 /* Developer Info Window Styles */
