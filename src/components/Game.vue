@@ -466,6 +466,11 @@ export default defineComponent({
         map: roadTexture,
       });
 
+      // Add these properties to your road material:
+      roadMaterial.polygonOffset = true;
+      roadMaterial.polygonOffsetFactor = 0.1; // Reduced from 1
+      roadMaterial.polygonOffsetUnits = 0.1; // Reduced from 1
+
       for (let row = 0; row <= rows; row++) {
         const roadGeometry = new THREE.BoxGeometry(
           columns * blockSpacing,
@@ -479,6 +484,8 @@ export default defineComponent({
           0.025, // Position adjusted to half the height
           row * blockSpacing - blockSpacing / 2
         );
+
+        roadMesh.position.y += 0.2; // Raise road just slightly above ground
 
         scene.add(roadMesh);
       }
@@ -496,6 +503,8 @@ export default defineComponent({
           0.025, // Position adjusted to half the height
           (rows * blockSpacing) / 2 - blockSpacing / 2
         );
+
+        roadMesh.position.y += 0.2; // Raise road just slightly above ground
 
         scene.add(roadMesh);
       }
@@ -2382,6 +2391,45 @@ const currentSpeed = ref(0);
 const currentFps = ref(0);
 let frameCount = 0;
 let lastFpsUpdateTime = 0;
+
+// Add this to your component's data/variables section
+const cameraVerticalOffset = 5; // Default camera height
+let targetCameraY = 0;
+let currentCameraY = 0;
+const cameraLerpFactor = 0.1; // Controls how quickly camera follows (lower = smoother)
+
+// Then modify your animation/game loop where you update the camera position
+// Look for code that positions the camera relative to the car and update it like this:
+function updateCamera() {
+  // Calculate the target camera position based on car's position and orientation
+  const carForward = new THREE.Vector3(0, 0, -1).applyQuaternion(car.quaternion);
+  const cameraDistance = 10; // Distance from car
+
+  // Calculate the target camera position based on car's horizontal position
+  const cameraOffset = carForward.clone().multiplyScalar(-cameraDistance);
+  const targetCameraPosition = car.position.clone().add(cameraOffset);
+
+  // Smoothly interpolate vertical position only
+  targetCameraY = car.position.y + cameraVerticalOffset;
+  currentCameraY = THREE.MathUtils.lerp(currentCameraY, targetCameraY, cameraLerpFactor);
+
+  // Apply the smoothed Y position while following X/Z exactly
+  camera.position.set(
+    targetCameraPosition.x,
+    currentCameraY,
+    targetCameraPosition.z
+  );
+
+  // Look at the car (or slightly above it)
+  camera.lookAt(
+    car.position.x,
+    car.position.y + 2, // Look slightly above the car
+    car.position.z
+  );
+}
+
+// Call updateCamera() in your animation loop
+// ... existing code ...
 
 return {
   gameContainer,
