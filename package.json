@@ -16,6 +16,7 @@
     "format": "prettier --write src/"
   },
   "dependencies": {
+    "cors": "^2.8.5",
     "mongoose": "^8.12.2",
     "pinia": "^2.2.6",
     "save-dev": "^0.0.1-security",

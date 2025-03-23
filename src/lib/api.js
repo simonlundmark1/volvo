@@ -1,7 +1,7 @@
 // API utility functions for highscores
 
-// Get the API base URL from environment variable or default to localhost in development
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+// In development, use the API URL from env var, in production use relative path
+const API_URL = import.meta.env.DEV ? import.meta.env.VITE_API_URL : '';
 
 /**
  * Fetch highscores from the API

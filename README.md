@@ -1,6 +1,46 @@
-# vue-project
+# Volvo Game with MongoDB Integration
 
-This template should help get you started developing with Vue 3 in Vite.
+A 3D driving game with MongoDB-powered highscores.
+
+## Project Structure
+
+This project uses a serverless architecture:
+
+- `/src` - Vue/Three.js frontend game
+- `/api` - Vercel serverless API endpoints 
+- `/models` - MongoDB data models
+- `/lib` - Shared utilities for database connection
+
+## Development
+
+1. Clone the repository
+2. Install dependencies:
+   ```
+   npm install
+   ```
+3. Create a `.env` file with your MongoDB connection string:
+   ```
+   MONGODB_URI=your_connection_string
+   VITE_API_URL=http://localhost:3001
+   ```
+4. Run the development server:
+   ```
+   npm run dev
+   ```
+
+## API Endpoints
+
+- `GET /api/hiscores` - Get top 10 highscores
+- `POST /api/hiscores` - Submit a new highscore (JSON body with `name` and `score`)
+
+## Deployment
+
+The project is deployed to Vercel, which handles both:
+- Frontend (Vue/Three.js game)
+- Backend (Serverless API functions)
+
+Environment variables (set in Vercel dashboard):
+- `MONGODB_URI` - Your MongoDB Atlas connection string
 
 ## Recommended IDE Setup
 
@@ -13,12 +53,6 @@ TypeScript cannot handle type information for `.vue` imports by default, so we r
 ## Customize configuration
 
 See [Vite Configuration Reference](https://vite.dev/config/).
-
-## Project Setup
-
-```sh
-npm install
-```
 
 ### Compile and Hot-Reload for Development
 
