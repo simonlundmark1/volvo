@@ -118,6 +118,7 @@ import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader';
 import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { PMREMGenerator } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader';
+import { getHighscores, saveHighscore } from '../lib/api.js';
 
 export default defineComponent({
   name: 'GameComponent',
@@ -1866,16 +1867,9 @@ const onMountedHandler = async () => {
   handleResize();
 
   try {
-    const response = await fetch('http://localhost:3001/api/hiscores');
-    if (response.ok) {
-      const savedScores = await response.json();
-      highScores.value = savedScores;
-    } else {
-      console.error('Failed to fetch highscores');
-      // Fallback to localStorage if API fails
-      const savedScores = JSON.parse(localStorage.getItem('highScores') || '[]');
-      highScores.value = savedScores;
-    }
+    // Use the API utility function instead of direct fetch
+    const savedScores = await getHighscores();
+    highScores.value = savedScores;
   } catch (error) {
     console.error('Error loading highscores:', error);
     // Fallback to localStorage if API fails
@@ -2057,30 +2051,9 @@ const submitHighScore = async () => {
   };
 
   try {
-    const response = await fetch('http://localhost:3001/api/hiscores', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(newScore),
-    });
-
-    if (response.ok) {
-      // API returns the updated highscores list
-      const updatedScores = await response.json();
-      highScores.value = updatedScores;
-    } else {
-      console.error('Failed to save score to API');
-      // Fallback to localStorage
-      const existingScores = JSON.parse(
-        localStorage.getItem('highScores') || '[]'
-      );
-      existingScores.push(newScore);
-      existingScores.sort((a, b) => b.score - a.score);
-      existingScores.splice(10);
-      localStorage.setItem('highScores', JSON.stringify(existingScores));
-      highScores.value = existingScores;
-    }
+    // Use the API utility function instead of direct fetch
+    const updatedScores = await saveHighscore(newScore);
+    highScores.value = updatedScores;
   } catch (error) {
     console.error('Error saving score:', error);
     // Fallback to localStorage
