@@ -15,6 +15,7 @@
     "format": "prettier --write src/"
   },
   "dependencies": {
+    "mongoose": "^8.12.2",
     "pinia": "^2.2.6",
     "save-dev": "^0.0.1-security",
     "seedrandom": "^3.0.5",

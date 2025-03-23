@@ -911,7 +911,7 @@ export default defineComponent({
     const isTimeUp = ref(false);
     const showHighScoreInput = ref(false);
     const showHighScoreList = ref(false);
-    const highScores = ref<{ name: string; score: number }[]>([]);
+    const highScores = ref<{ name: string; score: number; _id?: string; createdAt?: string }[]>([]);
     const playerName = ref('');
 
     let pyramids: (THREE.Mesh | THREE.Group)[] = [];
@@ -1854,7 +1854,7 @@ const handleResize = () => {
   }
 };
 
-const onMountedHandler = () => {
+const onMountedHandler = async () => {
   window.addEventListener('keydown', onKeyDown);
   window.addEventListener('keyup', onKeyUp);
 
@@ -1865,8 +1865,23 @@ const onMountedHandler = () => {
   window.addEventListener('resize', handleResize);
   handleResize();
 
-  const savedScores = JSON.parse(localStorage.getItem('highScores') || '[]');
-  highScores.value = savedScores;
+  try {
+    const response = await fetch('http://localhost:3001/api/hiscores');
+    if (response.ok) {
+      const savedScores = await response.json();
+      highScores.value = savedScores;
+    } else {
+      console.error('Failed to fetch highscores');
+      // Fallback to localStorage if API fails
+      const savedScores = JSON.parse(localStorage.getItem('highScores') || '[]');
+      highScores.value = savedScores;
+    }
+  } catch (error) {
+    console.error('Error loading highscores:', error);
+    // Fallback to localStorage if API fails
+    const savedScores = JSON.parse(localStorage.getItem('highScores') || '[]');
+    highScores.value = savedScores;
+  }
 };
 
 watch(
@@ -2035,25 +2050,49 @@ const endGame = () => {
   angularVelocity.value = 0;
 };
 
-const submitHighScore = () => {
+const submitHighScore = async () => {
   const newScore = {
     name: playerName.value || 'Anonymous',
     score: score.value,
   };
 
-  const existingScores = JSON.parse(
-    localStorage.getItem('highScores') || '[]'
-  );
+  try {
+    const response = await fetch('http://localhost:3001/api/hiscores', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(newScore),
+    });
 
-  existingScores.push(newScore);
-
-  existingScores.sort((a: any, b: any) => b.score - a.score);
-
-  existingScores.splice(10);
-
-  localStorage.setItem('highScores', JSON.stringify(existingScores));
-
-  highScores.value = existingScores;
+    if (response.ok) {
+      // API returns the updated highscores list
+      const updatedScores = await response.json();
+      highScores.value = updatedScores;
+    } else {
+      console.error('Failed to save score to API');
+      // Fallback to localStorage
+      const existingScores = JSON.parse(
+        localStorage.getItem('highScores') || '[]'
+      );
+      existingScores.push(newScore);
+      existingScores.sort((a, b) => b.score - a.score);
+      existingScores.splice(10);
+      localStorage.setItem('highScores', JSON.stringify(existingScores));
+      highScores.value = existingScores;
+    }
+  } catch (error) {
+    console.error('Error saving score:', error);
+    // Fallback to localStorage
+    const existingScores = JSON.parse(
+      localStorage.getItem('highScores') || '[]'
+    );
+    existingScores.push(newScore);
+    existingScores.sort((a, b) => b.score - a.score);
+    existingScores.splice(10);
+    localStorage.setItem('highScores', JSON.stringify(existingScores));
+    highScores.value = existingScores;
+  }
 
   showHighScoreInput.value = false;
   showHighScoreList.value = true;
