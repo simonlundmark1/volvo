@@ -7,7 +7,11 @@ import { Hiscore } from './models/Hiscore.js';
 dotenv.config();
 
 const app = express();
-app.use(cors());
+app.use(cors({
+  origin: '*', // Allow requests from any origin in development
+  methods: ['GET', 'POST'],
+  credentials: false
+}));
 app.use(express.json());
 
 mongoose.connect(process.env.MONGODB_URI)
