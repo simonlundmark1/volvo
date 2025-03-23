@@ -25,7 +25,7 @@
         <h2>{{ selectedVehicle === 'volvo' ? 'Volvo 940' : 'Saab 900' }}</h2>
         <p>Speed: {{ selectedVehicle === 'volvo' ? 'Very Fast' : selectedVehicle === 'saab' ? 'Fast' : 'Excellent' }}</p>
         <p>Handling: {{ selectedVehicle === 'volvo' ? 'Good' : selectedVehicle === 'saab' ? 'Excellent' : 'Normal' }}</p>
-        <p><br>Use ← → to change vehicle<br>Press Enter to select</p>
+        <p><br>Press Enter to select</p>
       </div>
     </div>
 
@@ -403,7 +403,7 @@ export default defineComponent({
           if (selectedVehicle.value === 'volvo') {
             // Volvo has larger coordinate values in its OBJ file, so we use a smaller scale
             vehicleSelectionCar.scale.set(0.01, 0.01, 0.01);
-            vehicleSelectionCar.position.set(0, -3.5, 0);
+            vehicleSelectionCar.position.set(0, -3, 0);
             vehicleSelectionCar.rotation.y = Math.PI;
           } else {
             // Saab has smaller coordinate values, so we need a larger scale
@@ -412,7 +412,7 @@ export default defineComponent({
             // Scale adjusted to ensure the Saab is properly visible (1.5x larger)
             vehicleSelectionCar.scale.set(1.5, 1.5, 1.5);
             // Adjust position to center it in the view
-            vehicleSelectionCar.position.set(0, 1, 0);
+            vehicleSelectionCar.position.set(0, 1.3, 0);
             // Make the Saab lay down horizontally (90 degrees around X-axis instead of Z-axis)
             vehicleSelectionCar.rotation.set(Math.PI/2, Math.PI, 0);
 
