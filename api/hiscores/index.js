@@ -22,44 +22,56 @@ const runMiddleware = (req, res, fn) => {
 };
 
 export default async function handler(req, res) {
-  // Enable CORS
-  await runMiddleware(req, res, corsMiddleware);
+  try {
+    // Enable CORS
+    await runMiddleware(req, res, corsMiddleware);
 
-  // Connect to database
-  await connectToDB();
-
-  // Handle GET requests
-  if (req.method === 'GET') {
+    // Connect to database
     try {
-      const top = await Hiscore.find().sort({ score: -1 }).limit(10);
-      return res.status(200).json(top);
-    } catch (error) {
-      console.error('Error fetching hiscores:', error);
-      return res.status(500).json({ error: 'Server error' });
+      await connectToDB();
+    } catch (dbError) {
+      return res.status(500).json({ error: 'Database connection failed' });
     }
-  }
 
-  // Handle POST requests
-  if (req.method === 'POST') {
-    try {
-      const { name, score } = req.body;
-
-      if (!name || name.length > 16 || typeof score !== 'number') {
-        return res.status(400).json({ error: 'Invalid input' });
+    // Handle GET requests
+    if (req.method === 'GET') {
+      try {
+        const top = await Hiscore.find().sort({ score: -1 }).limit(10).lean();
+        return res.status(200).json(top);
+      } catch (error) {
+        return res.status(500).json({ error: 'Server error' });
       }
-
-      const entry = new Hiscore({ name, score });
-      await entry.save();
-
-      // Return updated top scores
-      const top = await Hiscore.find().sort({ score: -1 }).limit(10);
-      return res.status(201).json(top);
-    } catch (error) {
-      console.error('Error saving hiscore:', error);
-      return res.status(500).json({ error: 'Server error' });
     }
-  }
 
-  // Handle unsupported methods
-  return res.status(405).end();
+    // Handle POST requests
+    if (req.method === 'POST') {
+      try {
+        if (!req.body) {
+          return res.status(400).json({ error: 'Request body is missing' });
+        }
+
+        const { name, score } = req.body;
+        if (!name || typeof score !== 'number') {
+          return res.status(400).json({ error: 'Invalid input' });
+        }
+
+        // Create and save in one operation
+        await Hiscore.create({
+          name: name.slice(0, 16), // Enforce max length
+          score
+        });
+
+        // Return updated top scores
+        const top = await Hiscore.find().sort({ score: -1 }).limit(10).lean();
+        return res.status(201).json(top);
+      } catch (error) {
+        return res.status(500).json({ error: 'Server error' });
+      }
+    }
+
+    // Handle unsupported methods
+    return res.status(405).json({ error: 'Method not allowed' });
+  } catch (error) {
+    return res.status(500).json({ error: 'Server error' });
+  }
 }
